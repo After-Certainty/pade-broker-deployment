@@ -1,0 +1,31 @@
+# Runtime overlay on the released GHCR pade-broker image.
+#
+#   - ghcr.io/ksteffe/pade-broker (digest-pinned via BASE_IMAGE build-arg)
+#   - exec reference providers (built from PADE v0.1.0 source at image build time)
+#   - rendered policy/bindings from config/.generated (no durable credentials)
+#
+# Durable authority (App private key, service account JSON) is mounted at deploy
+# time via Secret Manager — never baked into the image.
+
+ARG BASE_IMAGE
+ARG PADE_REPO=https://github.com/ksteffe/pade.git
+ARG PADE_VERSION=v0.1.0
+
+# Build static provider binaries from the released PADE tag (not a local cache checkout).
+FROM golang:1.26-bookworm AS providers
+ARG PADE_REPO
+ARG PADE_VERSION
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && git clone --depth 1 --branch "${PADE_VERSION}" "${PADE_REPO}" /src
+WORKDIR /src
+RUN go mod download \
+    && CGO_ENABLED=0 go build -o /out/pade-provider-github ./examples/providers/github \
+    && CGO_ENABLED=0 go build -o /out/pade-provider-google-analytics ./examples/providers/google-analytics
+
+FROM ${BASE_IMAGE}
+COPY --from=providers /out/pade-provider-github /providers/pade-provider-github
+COPY --from=providers /out/pade-provider-google-analytics /providers/pade-provider-google-analytics
+COPY config/.generated/broker-policy.yaml /config/policy.yaml
+COPY config/.generated/broker-bindings.yaml /config/bindings.yaml

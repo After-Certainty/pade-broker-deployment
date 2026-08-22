@@ -1,0 +1,12 @@
+# Ignore secrets and local-only files in the runtime overlay build context.
+.cache
+.env
+.git
+*.md
+docs
+scripts
+agent
+Makefile
+versions.env
+.env.example
+.gitignore

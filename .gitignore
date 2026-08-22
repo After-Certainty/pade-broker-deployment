@@ -1,0 +1,28 @@
+# Local env (deployment IDs only — never put PEM / SA JSON / tokens here)
+.env
+
+# Rendered policy/bindings (from config/*.yaml.tmpl + .env)
+config/.generated/
+
+# PADE source checkout (broker is pulled from GHCR; providers cloned at docker build)
+.cache/
+
+# TLS / keys / service-account material
+*.pem
+*-key.json
+*credentials*.json
+service-account*.json
+
+# Terraform (deferred; ignore if introduced later)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+
+# Editor / OS
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/

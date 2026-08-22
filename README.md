@@ -1,0 +1,171 @@
+# Deploy a PADE broker on Google Cloud Run
+
+Template for deploying the open-source [PADE](https://github.com/ksteffe/pade) reference broker.
+Fork or clone this repo, fill in `.env` with **your** project identifiers, and use the Make targets to build a runtime overlay and deploy it.
+
+The broker binary comes from the **released GHCR image**. This repo only:
+
+1. Builds a runtime overlay (exec providers + your policy/bindings)
+2. Stores durable keys in Google Cloud Secret Manager
+3. Deploys the overlay to Cloud Run with those secrets mounted as files
+
+Protocol / identity docs: [cursor-oidc-broker-dogfood.md](https://github.com/ksteffe/pade/blob/main/docs/cursor-oidc-broker-dogfood.md)
+Release: [pade v0.1.0](https://github.com/ksteffe/pade/releases/tag/v0.1.0)
+
+## Architecture
+
+```text
+ghcr.io/ksteffe/pade-broker@v0.1.0  (released; digest-pinned in versions.env)
+        +
+runtime overlay  (exec providers + rendered policy/bindings → your Artifact Registry)
+        +
+Google Cloud Run  (-tls-termination=proxy, Secret Manager file mounts)
+        +
+Cursor Cloud Agent  (provider: broker, short-lived OIDC JWT)
+```
+
+The broker mints **short-lived derived tokens** via PADE’s `provider: exec`
+reference providers (GitHub App installation tokens + Google OAuth access tokens).
+
+Durable authority stays on the broker. The agent receives only derived credentials.
+
+Do not commit `.env`, PEMs, or service-account JSON. Policy/bindings YAML is
+rendered at build time from templates + `.env` and is gitignored.
+
+## Image pins
+
+Recorded in [`versions.env`](versions.env). Override any of these in `.env` if you deploy a PADE fork.
+
+| Artifact | Value |
+|----------|--------|
+| Broker (upstream) | `ghcr.io/ksteffe/pade-broker:v0.1.0` |
+| Broker digest | `sha256:e2f9364e018b1ae2c53ba742b71e2bf903fc606d2366752ff5f80888513003b8` |
+| Source commit | `0328fbf03827fb62681609b837e966b14ae64791` |
+| Runtime overlay tag | `pade-broker-runtime:v0.1.0` (your Artifact Registry) |
+
+This repo does **not** build `pade-broker` from source. `make build` pulls the
+released GHCR image and layers exec providers + rendered config on top.
+
+## Prerequisites
+
+- Docker
+- [Google Cloud SDK](https://cloud.google.com/sdk) (`gcloud`), authenticated to a project with billing enabled
+- A GitHub App installed on the repos you will expose (`metadata:read`, `contents:read`)
+- A Google service account with access to the GA4 property you will expose
+- Network access to pull from `ghcr.io` (public package; no auth required)
+- A Cursor Cloud Agent (or other PADE consumer) to obtain your OIDC subject
+
+## Configure `.env`
+
+```bash
+cp .env.example .env
+```
+
+`.env` holds **non-secret identifiers only**. Never put a private key, token, or SA JSON here.
+
+| Variable | Required | How to obtain |
+|----------|----------|----------------|
+| `PROJECT_ID` | yes | GCP project id |
+| `PROJECT_NUMBER` | no | Looked up from `PROJECT_ID` via `gcloud` |
+| `GITHUB_APP_ID` | yes | GitHub → Settings → Developer settings → GitHub Apps |
+| `GITHUB_APP_INSTALLATION_ID` | yes | Installation id on the org/account where the App is installed |
+| `GITHUB_REPOSITORIES` | yes | Comma-separated `owner/repo` the App may mint tokens for |
+| `GA_PROPERTY_ID` | yes | GA4 property resource name, e.g. `properties/123456789` |
+| `CURSOR_OIDC_SUBJECT` | yes | From a Cursor Cloud Agent: `pade identity --audience "$(make -s predict-url)"` |
+| `BROKER_URL` | no | Defaults to the predicted Cloud Run URL |
+| `REGION`, `SERVICE`, image pins | no | Override [`versions.env`](versions.env) defaults |
+
+`CURSOR_OIDC_SUBJECT` uses the **predicted** audience. You can set it before the first deploy; the broker does not need to be up for `pade identity`.
+
+## Quick start
+
+```bash
+cp .env.example .env
+# edit .env — PROJECT_ID, GitHub App ids, GA property, Cursor subject
+
+make bootstrap-gcp
+make predict-url
+
+# Durable keys → Secret Manager (values never printed or committed)
+GITHUB_APP_PRIVATE_KEY="$(cat github-app.pem)" make secret-github-app
+GOOGLE_ANALYTICS_SA_JSON="$(cat ga-sa.json)" make secret-ga-sa
+
+make build    # render config, pull GHCR broker, build runtime overlay
+make push
+make deploy
+
+make validate-remote
+make print-agent-bindings   # copy into the Cursor Cloud Agent
+```
+
+## Make targets
+
+| Target | What it does |
+|--------|----------------|
+| `make bootstrap-gcp` | Enable APIs; create Artifact Registry, runtime SA, IAM |
+| `make predict-url` | Print deterministic Cloud Run HTTPS URL |
+| `make render-config` | Render policy/bindings from templates + `.env` |
+| `make print-agent-bindings` | Print agent YAML pointed at the predicted URL |
+| `make pull-broker` | Pull released `ghcr.io/ksteffe/pade-broker` |
+| `make build` | Render config; build runtime overlay on the digest-pinned broker |
+| `make push` | Push runtime overlay to Artifact Registry |
+| `make secret-github-app` | Pipe GitHub App PEM into Secret Manager |
+| `make secret-ga-sa` | Pipe GA service account JSON into Secret Manager |
+| `make deploy` | Deploy runtime image; mount secrets as files |
+| `make health` | Stage 2 liveness |
+| `make authz-smoke` | Stage 3: unauthenticated `/v1/resolve` → 401 |
+| `make logs` | Recent broker Cloud Logging lines |
+| `make teardown-docs` | Print teardown commands (does not delete) |
+
+## What this repo builds vs pulls vs mounts
+
+| Component | Source |
+|-----------|--------|
+| `pade-broker` binary | **Pull** `ghcr.io/ksteffe/pade-broker@sha256:e2f9364…` |
+| Exec providers | **Build** from PADE `v0.1.0` tag during `docker build` (not cached in repo) |
+| Policy / bindings | **Render** from `config/*.yaml.tmpl` + `.env`, then copy into the overlay |
+| App PEM / SA JSON | **Mount** from Secret Manager at deploy |
+
+## Secret setup
+
+Durable keys go to Google Cloud Secret Manager. Populate them via Make (stdin or env). Do not commit the values.
+
+| Secret Manager id | Mounted at |
+|-------------------|------------|
+| `github-app-private-key` | `/run/secrets/github-app/private-key.pem` |
+| `google-analytics-sa` | `/run/secrets/google-analytics/sa.json` |
+
+Cloud Run allows one secret volume per mount directory — each secret uses its own subdirectory.
+
+## Capabilities
+
+This overlay ships two reference capabilities (extend the templates and Dockerfile if you need more):
+
+| Capability | Broker provider | Agent receives |
+|------------|-----------------|----------------|
+| `github.repo.read` | `pade-provider-github` | Short-lived `GITHUB_TOKEN` |
+| `google-analytics.read` | `pade-provider-google-analytics` | `GA_ACCESS_TOKEN`, `GA_PROPERTY_ID` |
+
+Agent-side example: [`agent/broker.bindings.example.yaml`](agent/broker.bindings.example.yaml) or `make print-agent-bindings`.
+
+## Validation
+
+See [`docs/validation.md`](docs/validation.md). Stages 4–6 run from a Cursor Cloud Agent.
+
+## Provenance
+
+Cloud Run env vars set at deploy: `PADE_VERSION`, `PADE_REF` (from `versions.env`).
+
+## Teardown
+
+```bash
+make teardown-docs
+```
+
+## Later: GitHub Actions
+
+See [`docs/github-actions.md`](docs/github-actions.md) — overlay build only; no PADE source clone for the broker.
+
+## Explicitly deferred
+
+Terraform, custom domains, multi-env, building unreleased PADE commits from this repo.

@@ -1,0 +1,21 @@
+# Server-owned broker authorization policy.
+# Rendered by `make render-config` from this template + .env. Does not contain credentials.
+#
+# oidc.audience is the Cloud Run URL (`make predict-url`, or BROKER_URL in .env).
+# subject is your Cursor workload identity (`pade identity --audience <BROKER_URL>`).
+#
+# requireRepoURLs: false until Cursor attests complete repo_urls
+# (managed Cloud Agents often lack the full set).
+version: "0.1"
+
+oidc:
+  issuer: https://api.cursor.com
+  audience: ${BROKER_URL}
+  # jwksURL defaults to https://api.cursor.com/keys when omitted
+
+policies:
+  - subject: "${CURSOR_OIDC_SUBJECT}"
+    requireRepoURLs: false
+    capabilities:
+      - github.repo.read
+      - google-analytics.read

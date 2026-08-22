@@ -1,0 +1,30 @@
+# Server-side exec bindings: broker mints short-lived derived tokens.
+# Durable keys live in Secret Manager and are mounted under /run/secrets/ at deploy.
+# Rendered by `make render-config` from this template + .env.
+version: "0.1"
+
+capabilities:
+  github.repo.read:
+    provider: exec
+    exec:
+      command: ["/providers/pade-provider-github"]
+      config:
+        tokenEnv: GITHUB_TOKEN
+        appId: "${GITHUB_APP_ID}"
+        installationId: "${GITHUB_APP_INSTALLATION_ID}"
+        privateKeyPath: "/run/secrets/github-app/private-key.pem"
+        repositories:
+${GITHUB_REPOSITORIES_YAML}
+        permissions:
+          metadata: read
+          contents: read
+
+  google-analytics.read:
+    provider: exec
+    exec:
+      command: ["/providers/pade-provider-google-analytics"]
+      config:
+        tokenEnv: GA_ACCESS_TOKEN
+        propertyId: "${GA_PROPERTY_ID}"
+        serviceAccountFile: "/run/secrets/google-analytics/sa.json"
+        scope: https://www.googleapis.com/auth/analytics.readonly

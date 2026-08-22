@@ -1,0 +1,20 @@
+# Agent-side bindings for a Cursor Cloud Agent (or local Consumer).
+# Point endpoint + audience at your Cloud Run broker URL.
+# The agent VM must NOT hold App keys, service account JSON, or derived tokens.
+#
+# Copy and replace YOUR-BROKER-URL (same value as oidc.audience on the broker),
+# or run: make print-agent-bindings
+version: "0.1"
+
+capabilities:
+  github.repo.read:
+    provider: broker
+    broker:
+      endpoint: https://YOUR-BROKER-URL
+      audience: https://YOUR-BROKER-URL
+
+  google-analytics.read:
+    provider: broker
+    broker:
+      endpoint: https://YOUR-BROKER-URL
+      audience: https://YOUR-BROKER-URL
