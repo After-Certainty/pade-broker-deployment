@@ -8,8 +8,9 @@ ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 SCRIPTS := $(ROOT)/scripts
 
 .PHONY: help bootstrap-gcp predict-url render-config print-agent-bindings \
-	pull-broker build push secret-github-app secret-ga-sa deploy health \
-	authz-smoke logs teardown-docs describe-url validate-remote
+	pull-broker build push secret-github-app secret-ga-sa secret-vercel-token \
+	deploy health authz-smoke logs teardown-docs describe-url validate-remote \
+	test-providers
 
 help:
 	@echo "Targets:"
@@ -22,12 +23,14 @@ help:
 	@echo "  push                  Push runtime overlay to Artifact Registry"
 	@echo "  secret-github-app     Populate GitHub App PEM in Secret Manager (stdin/env)"
 	@echo "  secret-ga-sa          Populate GA service account JSON in Secret Manager (stdin/env)"
+	@echo "  secret-vercel-token   Populate Vercel access token in Secret Manager (stdin/env)"
 	@echo "  deploy                Deploy runtime image to Cloud Run"
 	@echo "  health                Stage 2 GET /healthz"
 	@echo "  authz-smoke           Stage 3 unauthenticated /v1/resolve → 401"
 	@echo "  logs                  Recent broker Cloud Logging lines"
 	@echo "  describe-url          Print deployed status.url"
 	@echo "  teardown-docs         Print teardown commands (no deletes)"
+	@echo "  test-providers        Unit-test deployment-owned exec providers"
 
 bootstrap-gcp:
 	@$(SCRIPTS)/bootstrap-gcp.sh
@@ -77,6 +80,12 @@ secret-github-app:
 
 secret-ga-sa:
 	@$(SCRIPTS)/populate-ga-sa-secret.sh
+
+secret-vercel-token:
+	@$(SCRIPTS)/populate-vercel-token-secret.sh
+
+test-providers:
+	@cd "$(ROOT)/providers/vercel" && go test ./...
 
 deploy:
 	@$(SCRIPTS)/deploy.sh

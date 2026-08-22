@@ -39,5 +39,5 @@ push/tag
 
 Policy/bindings are rendered from env at build time (`make render-config`) and
 copied into the overlay image. Bootstrap secrets (GitHub App PEM, GA service
-account JSON) stay in Secret Manager and are referenced at deploy time — not
-injected by CI plaintext.
+account JSON, Vercel access token) stay in Secret Manager and are referenced at
+deploy time — not injected by CI plaintext.

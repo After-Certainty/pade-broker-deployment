@@ -16,9 +16,10 @@ BINDINGS="$(bindings_file_rel)"
 
 GITHUB_KEY_MOUNT="/run/secrets/github-app/private-key.pem"
 GA_SA_MOUNT="/run/secrets/google-analytics/sa.json"
+VERCEL_TOKEN_MOUNT="/run/secrets/vercel/token"
 
 ENV_VARS="PADE_VERSION=${PADE_VERSION},PADE_REF=${PADE_REF}"
-SECRETS="${GITHUB_KEY_MOUNT}=${GITHUB_APP_KEY_SECRET}:latest,${GA_SA_MOUNT}=${GA_SA_SECRET}:latest"
+SECRETS="${GITHUB_KEY_MOUNT}=${GITHUB_APP_KEY_SECRET}:latest,${GA_SA_MOUNT}=${GA_SA_SECRET}:latest,${VERCEL_TOKEN_MOUNT}=${VERCEL_TOKEN_SECRET}:latest"
 
 echo "==> gcloud run deploy ${SERVICE}"
 echo "    image=${RT}"

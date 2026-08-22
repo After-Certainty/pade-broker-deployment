@@ -21,6 +21,8 @@ gcloud secrets delete ${GITHUB_APP_KEY_SECRET} --project=${PROJECT_ID}
 
 gcloud secrets delete ${GA_SA_SECRET} --project=${PROJECT_ID}
 
+gcloud secrets delete ${VERCEL_TOKEN_SECRET} --project=${PROJECT_ID}
+
 gcloud artifacts repositories delete ${AR_REPO} --location=${REGION} --project=${PROJECT_ID}
 
 gcloud iam service-accounts delete ${SA} --project=${PROJECT_ID}

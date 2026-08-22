@@ -61,7 +61,7 @@ else
 fi
 
 # If broker-side secrets already exist, ensure runtime SA can read them.
-for SECRET_NAME in "${GITHUB_APP_KEY_SECRET}" "${GA_SA_SECRET}"; do
+for SECRET_NAME in "${GITHUB_APP_KEY_SECRET}" "${GA_SA_SECRET}" "${VERCEL_TOKEN_SECRET}"; do
   if gcloud secrets describe "${SECRET_NAME}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
     echo "==> Granting secretAccessor on existing ${SECRET_NAME}"
     gcloud secrets add-iam-policy-binding "${SECRET_NAME}" \

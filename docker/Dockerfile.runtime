@@ -1,14 +1,15 @@
 # Runtime overlay on the released GHCR pade-broker image.
 #
 #   - ghcr.io/ksteffe/pade-broker (digest-pinned via BASE_IMAGE build-arg)
-#   - exec reference providers (built from PADE v0.1.0 source at image build time)
+#   - PADE reference exec providers (built from PADE v0.1.0 source at image build time)
+#   - deployment-owned Vercel exec provider (built from providers/vercel in this repo)
 #   - rendered policy/bindings from config/.generated (no durable credentials)
 #
-# Durable authority (App private key, service account JSON) is mounted at deploy
-# time via Secret Manager — never baked into the image.
+# Durable authority (App private key, service account JSON, Vercel token) is mounted
+# at deploy time via Secret Manager — never baked into the image.
 
 ARG BASE_IMAGE
-ARG PADE_REPO=https://github.com/ksteffe/pade.git
+ARG PADE_REPO=https://github.com/After-Certainty/pade.git
 ARG PADE_VERSION=v0.1.0
 
 # Build static provider binaries from the released PADE tag (not a local cache checkout).
@@ -24,8 +25,14 @@ RUN go mod download \
     && CGO_ENABLED=0 go build -o /out/pade-provider-github ./examples/providers/github \
     && CGO_ENABLED=0 go build -o /out/pade-provider-google-analytics ./examples/providers/google-analytics
 
+# Deployment-owned Milestone L provider (not in PADE core).
+COPY providers/vercel /src-vercel
+WORKDIR /src-vercel
+RUN CGO_ENABLED=0 go build -o /out/pade-provider-vercel .
+
 FROM ${BASE_IMAGE}
 COPY --from=providers /out/pade-provider-github /providers/pade-provider-github
 COPY --from=providers /out/pade-provider-google-analytics /providers/pade-provider-google-analytics
+COPY --from=providers /out/pade-provider-vercel /providers/pade-provider-vercel
 COPY config/.generated/broker-policy.yaml /config/policy.yaml
 COPY config/.generated/broker-bindings.yaml /config/bindings.yaml
