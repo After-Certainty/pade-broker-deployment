@@ -55,7 +55,8 @@ after Material is delivered. Downstream Vercel token scope remains authoritative
 ## Broker / deployment responsibilities
 
 1. Store a Vercel access token in Secret Manager (`vercel-token`).
-2. Mount it at `/run/secrets/vercel/token` on Cloud Run.
+2. Mount it at `/run/secrets/vercel/token` on Cloud Run by setting
+   `MOUNT_SHARED_VERCEL_TOKEN=1` for `make deploy` (omitted by default for Milestone M).
 3. Ship `/providers/pade-provider-vercel` in the runtime overlay.
 4. Bind `vercel.diagnostics` → `provider: exec` with server-owned config
    (`tokenFile`, `tokenEnv`) — never put the token in rendered YAML or `.env`.
