@@ -27,9 +27,10 @@ jobs:
       DEPLOYMENT_GIT_SHA: ${{ github.sha }}
       PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
       PROJECT_NUMBER: ${{ vars.GCP_PROJECT_NUMBER }}
-      GITHUB_APP_ID: ${{ vars.GITHUB_APP_ID }}
-      GITHUB_APP_INSTALLATION_ID: ${{ vars.GITHUB_APP_INSTALLATION_ID }}
-      GITHUB_REPOSITORIES: ${{ vars.GITHUB_REPOSITORIES }}
+      # GitHub forbids Environment variable names that start with GITHUB_.
+      GITHUB_APP_ID: ${{ vars.GH_APP_ID }}
+      GITHUB_APP_INSTALLATION_ID: ${{ vars.GH_APP_INSTALLATION_ID }}
+      GITHUB_REPOSITORIES: ${{ vars.GH_REPOSITORIES }}
       GA_PROPERTY_ID: ${{ vars.GA_PROPERTY_ID }}
       CURSOR_OIDC_SUBJECT: ${{ vars.CURSOR_OIDC_SUBJECT }}
     steps:
