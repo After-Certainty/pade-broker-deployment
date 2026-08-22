@@ -19,6 +19,10 @@ GA_SA_MOUNT="/run/secrets/google-analytics/sa.json"
 VERCEL_TOKEN_MOUNT="/run/secrets/vercel/token"
 
 ENV_VARS="PADE_VERSION=${PADE_VERSION},PADE_REF=${PADE_REF}"
+# Optional provenance from CI (full deployment-repo git SHA). Local deploys omit this.
+if [[ -n "${DEPLOYMENT_GIT_SHA:-}" ]]; then
+  ENV_VARS="${ENV_VARS},DEPLOYMENT_GIT_SHA=${DEPLOYMENT_GIT_SHA}"
+fi
 SECRETS="${GITHUB_KEY_MOUNT}=${GITHUB_APP_KEY_SECRET}:latest,${GA_SA_MOUNT}=${GA_SA_SECRET}:latest,${VERCEL_TOKEN_MOUNT}=${VERCEL_TOKEN_SECRET}:latest"
 
 echo "==> gcloud run deploy ${SERVICE}"

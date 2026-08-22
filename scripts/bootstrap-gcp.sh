@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Idempotent GCP bootstrap for a PADE broker Cloud Run deployment.
-# Enables APIs, creates Artifact Registry repo, runtime SA, and deployer IAM.
+# Enables APIs, creates Artifact Registry repo, runtime SA, and local-user deployer IAM.
+# For GitHub Actions OIDC / WIF (deployer SA + pool/provider), run: make bootstrap-github-wif
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

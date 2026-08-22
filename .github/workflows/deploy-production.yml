@@ -1,0 +1,100 @@
+# Production deploy via GitHub OIDC → GCP Workload Identity Federation.
+# Pushes an immutable runtime image tagged with this repo's full git SHA.
+name: Deploy production
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: pade-broker-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: Build push deploy validate
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      # Immutable overlay tag = this deployment repository commit.
+      RUNTIME_IMAGE_TAG: ${{ github.sha }}
+      DEPLOYMENT_GIT_SHA: ${{ github.sha }}
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      PROJECT_NUMBER: ${{ vars.GCP_PROJECT_NUMBER }}
+      GITHUB_APP_ID: ${{ vars.GITHUB_APP_ID }}
+      GITHUB_APP_INSTALLATION_ID: ${{ vars.GITHUB_APP_INSTALLATION_ID }}
+      GITHUB_REPOSITORIES: ${{ vars.GITHUB_REPOSITORIES }}
+      GA_PROPERTY_ID: ${{ vars.GA_PROPERTY_ID }}
+      CURSOR_OIDC_SUBJECT: ${{ vars.CURSOR_OIDC_SUBJECT }}
+    steps:
+      - name: Checkout
+        # actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Set up Go
+        # actions/setup-go@v7.0.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: "1.22"
+          cache: false
+
+      - name: Provider unit tests
+        run: make test-providers
+
+      - name: Write deployment .env from Environment variables
+        # Identifiers only — PEMs / SA JSON / Vercel tokens stay in Secret Manager.
+        run: |
+          set -euo pipefail
+          required=(
+            PROJECT_ID
+            PROJECT_NUMBER
+            GITHUB_APP_ID
+            GITHUB_APP_INSTALLATION_ID
+            GITHUB_REPOSITORIES
+            GA_PROPERTY_ID
+            CURSOR_OIDC_SUBJECT
+          )
+          for v in "${required[@]}"; do
+            if [[ -z "${!v:-}" ]]; then
+              echo "error: GitHub Environment variable $v is unset (environment: production)" >&2
+              exit 1
+            fi
+          done
+          {
+            echo "PROJECT_ID=${PROJECT_ID}"
+            echo "PROJECT_NUMBER=${PROJECT_NUMBER}"
+            echo "GITHUB_APP_ID=${GITHUB_APP_ID}"
+            echo "GITHUB_APP_INSTALLATION_ID=${GITHUB_APP_INSTALLATION_ID}"
+            echo "GITHUB_REPOSITORIES=${GITHUB_REPOSITORIES}"
+            echo "GA_PROPERTY_ID=${GA_PROPERTY_ID}"
+            echo "CURSOR_OIDC_SUBJECT=${CURSOR_OIDC_SUBJECT}"
+          } > .env
+
+      - name: Authenticate to Google Cloud (WIF)
+        # google-github-actions/auth@v3.0.0
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        # google-github-actions/setup-gcloud@v3.0.1
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
+
+      - name: Build runtime overlay
+        run: make build
+
+      - name: Push to Artifact Registry
+        run: make push
+
+      - name: Deploy to Cloud Run
+        run: make deploy
+
+      - name: Remote validation (health + authz smoke)
+        run: make validate-remote

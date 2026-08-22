@@ -65,16 +65,25 @@ broker_image() {
 }
 
 # Private overlay image (exec providers + policy/bindings) in your Artifact Registry.
+# Tag defaults to PADE_VERSION for local ergonomics. Override RUNTIME_IMAGE_TAG for
+# immutable CI/CD tags (e.g. full git SHA of this deployment repository).
 runtime_image() {
   load_versions
   require_project
-  echo "${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${RUNTIME_IMAGE_NAME}:${PADE_VERSION}"
+  local tag="${RUNTIME_IMAGE_TAG:-${PADE_VERSION}}"
+  echo "${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${RUNTIME_IMAGE_NAME}:${tag}"
 }
 
 runtime_sa_email() {
   load_versions
   require_project
   echo "${RUNTIME_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+}
+
+deployer_sa_email() {
+  load_versions
+  require_project
+  echo "${DEPLOYER_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 }
 
 bindings_file() {
