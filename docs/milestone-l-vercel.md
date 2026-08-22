@@ -164,10 +164,13 @@ The agent receives the token for the lifetime of that child execution.
 
 | This is | This is not |
 |---------|-------------|
-| Milestone L external CLI dogfood | Milestone M (subject-bound / WIF credentials) |
+| Milestone L external CLI dogfood | Completed Milestone M live A/B E2E |
 | Deployment-specific wiring | First-class PADE Vercel support |
 | Static Material from Secret Manager | Per-user Vercel credentials / `userSecrets` |
 | Ordinary Vercel CLI in the consumer | Vercel CLI or MCP inside the broker image |
 
 Subject-specific Vercel credentials, Google WIF, and Secret Manager IAM keyed by
-subject belong to a later Milestone M experiment — do not implement them here.
+subject are scaffolded under Milestone M — see [`milestone-m-wif.md`](milestone-m-wif.md).
+Keep this Milestone L path as the default shared-authority deploy until you
+intentionally flip bindings to `subject-secret-wif` (requires broker **v0.1.1+**
+identity forwarding).

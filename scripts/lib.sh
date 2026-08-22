@@ -102,3 +102,21 @@ policy_file() {
 policy_file_rel() {
   echo "config/.generated/broker-policy.yaml"
 }
+
+# Deterministic Secret Manager id for a Cursor OIDC subject (Milestone M).
+# Must stay in sync with providers/vercel secretIDForSubject.
+vercel_subject_secret_id() {
+  local subject="$1"
+  local prefix="${VERCEL_SUBJECT_SECRET_PREFIX:-vercel-token-sub}"
+  local hash
+  hash="$(printf '%s' "${subject}" | sha256sum | awk '{print $1}' | cut -c1-16)"
+  printf '%s-%s' "${prefix}" "${hash}"
+}
+
+# IAM member for a Cursor WIF federated subject (Milestone M).
+cursor_federated_principal_member() {
+  local subject="$1"
+  local pool_id="${CURSOR_WIF_POOL_ID:-pade-broker-cursor}"
+  printf 'principal://iam.googleapis.com/projects/%s/locations/global/workloadIdentityPools/%s/subject/%s' \
+    "${PROJECT_NUMBER}" "${pool_id}" "${subject}"
+}
