@@ -120,10 +120,11 @@ vercel-token-sub-<first 16 hex chars of sha256(utf8(subject))>
 Populate and provider code share this convention. Isolation is enforced by
 Secret Manager IAM on the federated principal — not by a PADE mapping table.
 
-### Example M binding (not the default deploy)
+### M binding (active in template)
 
-Keep Milestone L as the deployed default. On broker **v0.1.1+**, switch
-`vercel.diagnostics` exec config to something like:
+[`config/broker-bindings.yaml.tmpl`](../config/broker-bindings.yaml.tmpl) uses
+`fulfillment: subject-secret-wif` for `vercel.diagnostics`. `make render-config`
+fills `projectNumber` / WIF ids / secret prefix from the project + `versions.env`:
 
 ```yaml
 vercel.diagnostics:
@@ -133,10 +134,10 @@ vercel.diagnostics:
     config:
       fulfillment: subject-secret-wif
       tokenEnv: VERCEL_TOKEN
-      projectNumber: "123456789012"
-      poolId: pade-broker-cursor
-      providerId: cursor
-      secretIdPrefix: vercel-token-sub
+      projectNumber: "${PROJECT_NUMBER}"
+      poolId: "${CURSOR_WIF_POOL_ID}"
+      providerId: "${CURSOR_WIF_PROVIDER_ID}"
+      secretIdPrefix: "${VERCEL_SUBJECT_SECRET_PREFIX}"
 ```
 
 Exec Request shape on broker v0.1.1+ (when verify succeeds):
@@ -161,7 +162,8 @@ Exec Request shape on broker v0.1.1+ (when verify succeeds):
    (or keep single `CURSOR_OIDC_SUBJECT`).
 4. For each subject: `SUBJECT=… VERCEL_TOKEN=… make secret-vercel-token-subject`
    (history-safe `read -rsp` recommended).
-5. Flip bindings to `subject-secret-wif` and re-deploy (keep L as default until then).
+5. `make render-config && make build && make push && make deploy` (bindings already
+   use `subject-secret-wif`).
 6. Acceptance: subject A and B resolve the **same** capability to **different**
    Vercel Material; cross-subject Secret Manager access denied by IAM.
 

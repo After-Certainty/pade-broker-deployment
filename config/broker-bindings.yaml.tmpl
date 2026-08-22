@@ -2,7 +2,7 @@
 # Durable keys live in Secret Manager and are mounted under /run/secrets/ at deploy.
 # Rendered by `make render-config` from this template + .env.
 # GitHub/GA providers mint short-lived derived tokens; vercel.diagnostics returns
-# static VERCEL_TOKEN Material (Milestone L — see docs/milestone-l-vercel.md).
+# subject-bound VERCEL_TOKEN Material via WIF (Milestone M — see docs/milestone-m-wif.md).
 version: "0.1"
 
 capabilities:
@@ -31,21 +31,20 @@ ${GITHUB_REPOSITORIES_YAML}
         serviceAccountFile: "/run/secrets/google-analytics/sa.json"
         scope: https://www.googleapis.com/auth/analytics.readonly
 
-  # Deployment-owned Milestone L dogfood (opaque, non-normative capability id).
-  # Static Material from Secret Manager — not a PADE-standardized Vercel capability.
-  # Default production path remains static-token-file (Milestone L).
-  # For Milestone M (broker v0.1.1+ forwards identity), switch config to:
-  #   fulfillment: subject-secret-wif
+  # Deployment-owned Milestone M dogfood (opaque, non-normative capability id).
+  # Subject-bound Material via Cursor → GCP WIF + per-subject Secret Manager IAM.
+  # Requires broker v0.1.1+ (forwards verified identity). See docs/milestone-m-wif.md.
+  # To revert to Milestone L shared authority, replace config with:
+  #   tokenFile: "/run/secrets/vercel/token"
   #   tokenEnv: VERCEL_TOKEN
-  #   projectNumber: "<GCP project number>"
-  #   poolId: pade-broker-cursor
-  #   providerId: cursor
-  #   secretIdPrefix: vercel-token-sub
-  # See docs/milestone-m-wif.md.
   vercel.diagnostics:
     provider: exec
     exec:
       command: ["/providers/pade-provider-vercel"]
       config:
-        tokenFile: "/run/secrets/vercel/token"
+        fulfillment: subject-secret-wif
         tokenEnv: VERCEL_TOKEN
+        projectNumber: "${PROJECT_NUMBER}"
+        poolId: "${CURSOR_WIF_POOL_ID}"
+        providerId: "${CURSOR_WIF_PROVIDER_ID}"
+        secretIdPrefix: "${VERCEL_SUBJECT_SECRET_PREFIX}"
