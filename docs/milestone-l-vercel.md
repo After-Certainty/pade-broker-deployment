@@ -171,5 +171,6 @@ The agent receives the token for the lifetime of that child execution.
 
 Subject-specific Vercel credentials, Google WIF, and Secret Manager IAM keyed by
 subject are scaffolded under Milestone M — see [`milestone-m-wif.md`](milestone-m-wif.md).
-Keep this Milestone L path as the default shared-authority deploy until PADE can
-forward broker-verified identity to exec providers.
+Keep this Milestone L path as the default shared-authority deploy until you
+intentionally flip bindings to `subject-secret-wif` (requires broker **v0.1.1+**
+identity forwarding).

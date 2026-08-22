@@ -86,12 +86,13 @@ Provider: ${PROVIDER_RESOURCE}
 Issuer:   ${ISSUER_URI}
 
 Next steps (Milestone M):
-  1. Allowlist subjects in .env (CURSOR_OIDC_SUBJECT or CURSOR_OIDC_SUBJECTS).
-  2. For each subject:
+  1. Deploy against broker v0.1.1+ (identity forwarding; digest-pinned in versions.env).
+  2. Allowlist subjects in .env (CURSOR_OIDC_SUBJECT or CURSOR_OIDC_SUBJECTS).
+  3. For each subject:
        SUBJECT='user:…' VERCEL_TOKEN='…' make secret-vercel-token-subject
-  3. Keep production on Milestone L (static token mount) until PADE forwards
-     broker-verified identity to exec providers — see docs/milestone-m-wif.md.
-  4. Then switch vercel.diagnostics exec config to fulfillment: subject-secret-wif.
+  4. Keep production on Milestone L (static token mount) until ready, then switch
+     vercel.diagnostics exec config to fulfillment: subject-secret-wif
+     — see docs/milestone-m-wif.md.
 
 Federated principal form (Secret Manager IAM):
   principal://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL_ID}/subject/SUBJECT

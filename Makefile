@@ -20,7 +20,7 @@ help:
 	@echo "  predict-url                  Print deterministic Cloud Run HTTPS URL"
 	@echo "  render-config                Render policy/bindings from templates + .env"
 	@echo "  print-agent-bindings         Print agent YAML pointed at the predicted URL"
-	@echo "  pull-broker                  Pull released ghcr.io/ksteffe/pade-broker"
+	@echo "  pull-broker                  Pull released ghcr.io/after-certainty/pade-broker"
 	@echo "  build                        Render config; build runtime overlay"
 	@echo "  push                         Push runtime overlay to Artifact Registry"
 	@echo "  secret-github-app            Populate GitHub App PEM in Secret Manager (stdin/env)"

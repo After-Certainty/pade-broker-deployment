@@ -10,12 +10,12 @@ The broker binary comes from the **released GHCR image**. This repo only:
 3. Deploys the overlay to Cloud Run with those secrets mounted as files
 
 Protocol / identity docs: [cursor-oidc-broker-dogfood.md](https://github.com/After-Certainty/pade/blob/main/docs/cursor-oidc-broker-dogfood.md)
-Release: [pade v0.1.0](https://github.com/After-Certainty/pade/releases/tag/v0.1.0)
+Release: [pade v0.1.1](https://github.com/After-Certainty/pade/releases/tag/v0.1.1)
 
 ## Architecture
 
 ```text
-ghcr.io/ksteffe/pade-broker@v0.1.0  (released; digest-pinned in versions.env)
+ghcr.io/after-certainty/pade-broker@v0.1.1  (released; digest-pinned in versions.env)
         +
 runtime overlay  (exec providers + rendered policy/bindings → your Artifact Registry)
         +
@@ -41,17 +41,13 @@ Recorded in [`versions.env`](versions.env). Override any of these in `.env` if y
 
 | Artifact | Value |
 |----------|--------|
-| Broker (upstream) | `ghcr.io/ksteffe/pade-broker:v0.1.0` |
-| Broker digest | `sha256:e2f9364e018b1ae2c53ba742b71e2bf903fc606d2366752ff5f80888513003b8` |
-| Source commit | `0328fbf03827fb62681609b837e966b14ae64791` |
+| Broker (upstream) | `ghcr.io/after-certainty/pade-broker:v0.1.1` |
+| Broker digest | `sha256:6c03d75475e23be9aef7aed867e746ae59cb3c16629e6d264465794fcab175bf` |
+| Source commit | `7cecd5e88f74ed47af74a6d09289c7bd1aeac566` |
 | Runtime overlay tag | `pade-broker-runtime:${PADE_VERSION}` locally; CI uses full deployment-repo git SHA |
 
 This repo does **not** build `pade-broker` from source. `make build` pulls the
 released GHCR image and layers exec providers + rendered config on top.
-
-> **Note:** The Git repo lives under `After-Certainty/pade`. The released container
-> artifact remains `ghcr.io/ksteffe/pade-broker` until a new GHCR coordinate is
-> published and digest-pinned here.
 
 ## Prerequisites
 
@@ -118,7 +114,7 @@ make print-agent-bindings   # copy into the Cursor Cloud Agent
 | `make predict-url` | Print deterministic Cloud Run HTTPS URL |
 | `make render-config` | Render policy/bindings from templates + `.env` |
 | `make print-agent-bindings` | Print agent YAML pointed at the predicted URL |
-| `make pull-broker` | Pull released `ghcr.io/ksteffe/pade-broker` |
+| `make pull-broker` | Pull released `ghcr.io/after-certainty/pade-broker` |
 | `make build` | Render config; build runtime overlay on the digest-pinned broker |
 | `make push` | Push runtime overlay to Artifact Registry |
 | `make secret-github-app` | Pipe GitHub App PEM into Secret Manager |
@@ -136,8 +132,8 @@ make print-agent-bindings   # copy into the Cursor Cloud Agent
 
 | Component | Source |
 |-----------|--------|
-| `pade-broker` binary | **Pull** `ghcr.io/ksteffe/pade-broker@sha256:e2f9364e…` |
-| GitHub + GA exec providers | **Build** from PADE `v0.1.0` tag during `docker build` |
+| `pade-broker` binary | **Pull** `ghcr.io/after-certainty/pade-broker@sha256:6c03d754…` |
+| GitHub + GA exec providers | **Build** from PADE `v0.1.1` tag during `docker build` |
 | Vercel exec provider | **Build** from `providers/vercel` in this repo (Milestone L) |
 | Policy / bindings | **Render** from `config/*.yaml.tmpl` + `.env`, then copy into the overlay |
 | App PEM / SA JSON / Vercel token | **Mount** from Secret Manager at deploy |
@@ -201,5 +197,6 @@ splitting invoker-IAM setup out of routine deploy (documented TODO in
 [`docs/github-actions.md`](docs/github-actions.md)).
 
 Milestone M (subject-bound Vercel credentials / Google WIF) scaffolding lives in
-this repo — see [`docs/milestone-m-wif.md`](docs/milestone-m-wif.md). Live A/B E2E
-still needs a small generic PADE identity-context change (ROADMAP question #17).
+this repo — see [`docs/milestone-m-wif.md`](docs/milestone-m-wif.md). Broker
+**v0.1.1** ships identity forwarding (ROADMAP #17); live A/B E2E still needs the
+operator WIF/secret checklist and an optional binding flip to `subject-secret-wif`.

@@ -67,42 +67,37 @@ Shared organizational authority (Milestone L static mount) remains a valid model
 
 ## Does PADE need changes?
 
-**Yes — for full end-to-end WIF isolation against released `pade-broker` v0.1.0.**
+**Shipped in `pade-broker` v0.1.1** (design question **#17** / ROADMAP acceptance
+“No”). Pin this repo to:
 
-### Why the current exec contract is insufficient
+| Field | Value |
+|-------|--------|
+| Image | `ghcr.io/after-certainty/pade-broker:v0.1.1` |
+| Digest | `sha256:6c03d75475e23be9aef7aed867e746ae59cb3c16629e6d264465794fcab175bf` |
+| Source | `7cecd5e88f74ed47af74a6d09289c7bd1aeac566` (includes identity forward) |
 
-The broker-side exec adapter sends only:
+### Why identity context was required
 
-```json
-{ "capability": "…", "operation": "resolve", "config": { } }
-```
+Without forwarding, the broker-side exec adapter sent only
+`{capability, operation, config}`. Provider environment is still a filtered copy
+of the Cloud Run **runtime service account** — the same Google principal for
+every Cursor subject — so Secret Manager IAM cannot isolate A vs B.
 
-No subject, no ID token. Provider environment is a filtered copy of the Cloud Run
-**runtime service account** ambient environment — the same Google principal for
-every Cursor subject.
-
-True downstream IAM isolation requires the provider to call Google STS **with
-the Cursor OIDC token** so Secret Manager sees federated principal A vs B. The
-broker already verified that JWT at `/v1/resolve`, but does **not** forward it
-(or any verified identity context) to exec providers.
+True downstream IAM isolation needs the provider to call Google STS **with the
+Cursor OIDC token**. As of v0.1.1, after successful verify + authorize the broker
+attaches broker-verified identity to trusted `provider: exec` stdin (exact
+presented bearer JWT). See upstream `docs/provider-contract.md`.
 
 | Approach without broker identity context | Result |
 |------------------------------------------|--------|
 | Runtime SA ADC + secret-name template | Needs subject string; IAM does **not** isolate by Cursor subject |
 | Mount all per-subject secrets on Cloud Run | Still needs subject; weakens IAM story |
 | PADE-owned subject→secret map | Explicitly forbidden by ROADMAP |
-| Full M WIF as diagrammed | **Blocked** until trusted providers receive broker-verified identity (at minimum the presented ID token) |
+| Full M WIF as diagrammed | Needs `identity.idToken` on exec Request (now available on v0.1.1+) |
 
-### Acceptance branch (ROADMAP)
-
-This maps to ROADMAP acceptance **“No”**: a **generic** deficiency — trusted
-external providers need carefully scoped access to **broker-verified workload
-identity** (design question **#17**). Vendor WIF/Secret Manager wiring stays in
-this repo. Only the identity-context seam should return to PADE.
-
-Until that PADE change lands, the `subject-secret-wif` fulfillment mode in
-[`providers/vercel/`](../providers/vercel/) **fails closed** when identity
-context is absent (expected on broker v0.1.0).
+Vendor WIF/Secret Manager wiring stays in this repo. The `subject-secret-wif`
+mode in [`providers/vercel/`](../providers/vercel/) **fails closed** when
+`identity.idToken` is absent (older brokers or failed verify).
 
 ## What this repo scaffolds now
 
@@ -127,8 +122,8 @@ Secret Manager IAM on the federated principal — not by a PADE mapping table.
 
 ### Example M binding (not the default deploy)
 
-Keep Milestone L as the deployed default. When PADE can supply identity context,
-switch `vercel.diagnostics` exec config to something like:
+Keep Milestone L as the deployed default. On broker **v0.1.1+**, switch
+`vercel.diagnostics` exec config to something like:
 
 ```yaml
 vercel.diagnostics:
@@ -144,7 +139,7 @@ vercel.diagnostics:
       secretIdPrefix: vercel-token-sub
 ```
 
-Expected forward-compatible exec Request shape (PADE change):
+Exec Request shape on broker v0.1.1+ (when verify succeeds):
 
 ```json
 {
@@ -160,21 +155,21 @@ Expected forward-compatible exec Request shape (PADE change):
 
 ## Operator checklist
 
-1. `make bootstrap-cursor-wif` (once per project; admin).
-2. Allowlist subjects: set `CURSOR_OIDC_SUBJECTS=subject-a,subject-b` in `.env`
+1. Deploy against broker **v0.1.1+** (digest-pinned in [`versions.env`](../versions.env)).
+2. `make bootstrap-cursor-wif` (once per project; admin).
+3. Allowlist subjects: set `CURSOR_OIDC_SUBJECTS=subject-a,subject-b` in `.env`
    (or keep single `CURSOR_OIDC_SUBJECT`).
-3. For each subject: `SUBJECT=… VERCEL_TOKEN=… make secret-vercel-token-subject`
+4. For each subject: `SUBJECT=… VERCEL_TOKEN=… make secret-vercel-token-subject`
    (history-safe `read -rsp` recommended).
-4. Keep production on Milestone L until PADE ships identity context; then flip
-   bindings to `subject-secret-wif` and re-deploy.
-5. Acceptance: subject A and B resolve the **same** capability to **different**
+5. Flip bindings to `subject-secret-wif` and re-deploy (keep L as default until then).
+6. Acceptance: subject A and B resolve the **same** capability to **different**
    Vercel Material; cross-subject Secret Manager access denied by IAM.
 
 ## What this is / is not
 
 | This is | This is not |
 |---------|-------------|
-| Milestone M experiment scaffolding | Completed live A/B E2E on broker v0.1.0 |
+| Milestone M experiment scaffolding | Completed live A/B E2E (operator still required) |
 | Deployment + IAM composition | PADE protocol / `userSecrets` |
-| Evidence for ROADMAP question #17 | A Vercel-specific PADE feature |
+| Consumer of ROADMAP #17 (broker v0.1.1) | A Vercel-specific PADE feature |
 | Compatible with shared L authority | A rewrite of every capability as user-specific |

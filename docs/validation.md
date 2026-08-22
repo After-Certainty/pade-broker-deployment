@@ -9,7 +9,7 @@ Use this as a forker’s checklist, not a record of any one deployment.
 ## Stage 1 — container
 
 Covered by [pade](https://github.com/After-Certainty/pade) CI and the released
-`ghcr.io/ksteffe/pade-broker:v0.1.0` image. Optional: `make pull-broker`.
+`ghcr.io/after-certainty/pade-broker:v0.1.1` image. Optional: `make pull-broker`.
 
 Local overlay checks (this repo):
 
@@ -119,18 +119,19 @@ in the public [pade](https://github.com/After-Certainty/pade) repo.
 - [ ] `pade exec --capability vercel.diagnostics -- vercel whoami` (or inspect/logs)
       succeeds with no manually copied Vercel credential in the agent
 
-## Stage 7 — Milestone M subject-bound Material (scaffolded; E2E blocked on PADE)
+## Stage 7 — Milestone M subject-bound Material (operator E2E)
 
-See [`milestone-m-wif.md`](milestone-m-wif.md). Operator prep in this repo:
+See [`milestone-m-wif.md`](milestone-m-wif.md). PADE **v0.1.1** forwards
+broker-verified `identity` to trusted exec providers. Operator prep:
 
-1. `make bootstrap-cursor-wif`
-2. Allowlist A/B subjects via `CURSOR_OIDC_SUBJECTS` and `make render-config`
-3. `SUBJECT=… VERCEL_TOKEN=… make secret-vercel-token-subject` per subject
+1. Pin/deploy this repo against `ghcr.io/after-certainty/pade-broker:v0.1.1`
+2. `make bootstrap-cursor-wif`
+3. Allowlist A/B subjects via `CURSOR_OIDC_SUBJECTS` and `make render-config`
+4. `SUBJECT=… VERCEL_TOKEN=… make secret-vercel-token-subject` per subject
+5. Flip `vercel.diagnostics` to `fulfillment: subject-secret-wif` and re-deploy
 
-Full A/B acceptance (same `vercel.diagnostics` capability → different Material via
-WIF + Secret Manager IAM) requires PADE to forward broker-verified identity to
-trusted exec providers (ROADMAP question #17). Until then, keep production on
-Milestone L static token mounts.
+Acceptance: same `vercel.diagnostics` capability → different Material via WIF +
+Secret Manager IAM. Keep production on Milestone L static mounts until that flip.
 
 ## Logging expectations
 

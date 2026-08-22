@@ -5,7 +5,7 @@
 // Cursor identity for federated Google credentials and reads a subject-bound
 // secret. Not part of PADE core; not a Vercel SDK or CLI.
 //
-// Contract: PADE v0.1.0 docs/provider-contract.md (broker-side exec).
+// Contract: PADE v0.1.1 docs/provider-contract.md (broker-side exec + identity).
 package main
 
 import (

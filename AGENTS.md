@@ -4,7 +4,7 @@
 
 This repo is **deployment tooling** (Bash + `make` wrappers around `docker` and
 `gcloud`), not a long-running app. It builds a runtime overlay image on top of
-the released PADE broker (`ghcr.io/ksteffe/pade-broker`) and deploys it to
+the released PADE broker (`ghcr.io/after-certainty/pade-broker`) and deploys it to
 Google Cloud Run. The "product" you can run locally is the broker container
 this repo builds. See `README.md` for the full deploy workflow and `Makefile`
 for all targets.
