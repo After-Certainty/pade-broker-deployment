@@ -87,9 +87,9 @@ Set on Environment **`production`** (non-secret identifiers):
 | `GCP_PROJECT_NUMBER` | Numeric project number (from bootstrap output or Cloud Console) |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | Full provider resource name printed by `make bootstrap-github-wif` |
 | `GCP_DEPLOYER_SERVICE_ACCOUNT` | `pade-broker-deployer@PROJECT_ID.iam.gserviceaccount.com` |
-| `GITHUB_APP_ID` | GitHub App id |
-| `GITHUB_APP_INSTALLATION_ID` | Installation id |
-| `GITHUB_REPOSITORIES` | Comma-separated `owner/repo` list |
+| `GH_APP_ID` | GitHub App id (maps to `GITHUB_APP_ID` in `.env`; GitHub forbids vars named `GITHUB_*`) |
+| `GH_APP_INSTALLATION_ID` | Installation id |
+| `GH_REPOSITORIES` | Comma-separated `owner/repo` list |
 | `GA_PROPERTY_ID` | `properties/…` |
 | `CURSOR_OIDC_SUBJECT` | Cursor OIDC subject allowlisted in broker policy |
 
