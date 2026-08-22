@@ -8,10 +8,20 @@ Use this as a forker’s checklist, not a record of any one deployment.
 
 ## Stage 1 — container
 
-Covered by [pade](https://github.com/ksteffe/pade) CI and the released
+Covered by [pade](https://github.com/After-Certainty/pade) CI and the released
 `ghcr.io/ksteffe/pade-broker:v0.1.0` image. Optional: `make pull-broker`.
 
+Local overlay checks (this repo):
+
+```bash
+make test-providers   # deployment-owned Vercel provider unit tests (fake tokens)
+make render-config
+make build            # requires Docker; pulls digest-pinned broker
+```
+
 - [ ] `make pull-broker` succeeds (digest-pinned image from `versions.env`)
+- [ ] `make test-providers` passes
+- [ ] `make build` produces an image containing `/providers/pade-provider-vercel`
 
 ## Stage 2 — Cloud Run health
 
@@ -67,37 +77,50 @@ or HTTP) and confirm allow/deny matches the rendered policy subject
 - [ ] `pade identity --audience <BROKER_URL>` returns a subject matching `.env`
 - [ ] A resolve for that subject is allowed; a different subject is denied
 
-## Stage 5 — derived-token resolution
+## Stage 5 — Material resolution
 
-Broker-side exec providers mint short-lived tokens from durable keys mounted
+Broker-side exec providers fulfill capabilities from durable keys mounted
 from Secret Manager:
 
 ```bash
 GITHUB_APP_PRIVATE_KEY="$(cat github-app.pem)" make secret-github-app
 GOOGLE_ANALYTICS_SA_JSON="$(cat ga-sa.json)" make secret-ga-sa
+read -rsp "Vercel token: " VERCEL_TOKEN && echo && export VERCEL_TOKEN
+make secret-vercel-token
+unset VERCEL_TOKEN
 make render-config   # also runs as a dependency of make build
 make build && make push && make deploy
 ```
 
 Non-secret ids come from `.env` (GitHub App id, installation, repos, GA property).
-From the agent, resolve with **no** App key, SA JSON, or derived tokens on the VM.
+From the agent, resolve with **no** App key, SA JSON, Vercel token, or derived
+tokens on the VM.
 
 - [ ] Secrets exist in Secret Manager and are mounted on Cloud Run
-- [ ] Agent resolve for `github.repo.read` and `google-analytics.read` succeeds without local keys
+- [ ] Agent resolve for `github.repo.read`, `google-analytics.read`, and
+      `vercel.diagnostics` succeeds without local keys
 
 ## Stage 6 — downstream call
 
-Use the returned authority for the smallest real API call:
+Use the returned authority for the smallest real call:
 
 - **GitHub:** `github.repo.read` → `github-repo-meta` (repo-scoped; not `/user` whoami)
 - **Google Analytics:** `google-analytics.read` → `ga-property-meta`
+- **Vercel (Milestone L):** `vercel.diagnostics` → ordinary Vercel CLI read/diagnostics
+  (e.g. `vercel whoami`, `vercel project inspect`, `vercel inspect`, `vercel logs`).
+  See [`milestone-l-vercel.md`](milestone-l-vercel.md). Do **not** use deploy/delete
+  or other write operations as the acceptance test.
 
-PADE reference scripts live under `examples/demo-project/scripts/` in the public repo.
+PADE reference scripts for GitHub/GA live under `examples/demo-project/scripts/`
+in the public [pade](https://github.com/After-Certainty/pade) repo.
 
 - [ ] `github-repo-meta` returns metadata for a repo in `GITHUB_REPOSITORIES`
 - [ ] `ga-property-meta` returns metadata for `GA_PROPERTY_ID`
+- [ ] `pade exec --capability vercel.diagnostics -- vercel whoami` (or inspect/logs)
+      succeeds with no manually copied Vercel credential in the agent
 
 ## Logging expectations
 
 Broker stderr (Cloud Logging) includes request decisions with subject/capability.
 It must not include OIDC JWTs or resolved secrets (PADE behavior).
+The Vercel provider must never write the token to stderr.

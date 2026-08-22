@@ -11,14 +11,15 @@ for all targets.
 
 ### What runs where (scope)
 
-- **Local (no cloud creds needed):** lint scripts, `make render-config`,
-  `make predict-url`, `make print-agent-bindings`, `make pull-broker`,
-  `make build`, and running the built image with `docker run`.
+- **Local (no cloud creds needed):** lint scripts, `make test-providers`,
+  `make render-config`, `make predict-url`, `make print-agent-bindings`,
+  `make pull-broker`, `make build`, and running the built image with `docker run`.
 - **Requires the user's real GCP project + secrets (out of scope for local
   dev):** `make bootstrap-gcp`, `make push`, `make deploy`, `make secret-*`,
   `make health`/`authz-smoke`/`logs` against the deployed URL. These need a
-  billed GCP project, `gcloud` auth, a GitHub App PEM, and a GA service-account
-  JSON — none of which are present in this VM.
+  billed GCP project, `gcloud` auth, a GitHub App PEM, a GA service-account
+  JSON, and (for Milestone L) a Vercel access token — none of which are present
+  in this VM by default.
 
 ### Docker daemon (must be started each boot)
 
@@ -48,7 +49,7 @@ PROJECT_ID=pade-dev-local
 PROJECT_NUMBER=123456789012
 GITHUB_APP_ID=100001
 GITHUB_APP_INSTALLATION_ID=200002
-GITHUB_REPOSITORIES=ksteffe/pade
+GITHUB_REPOSITORIES=After-Certainty/pade
 GA_PROPERTY_ID=properties/987654321
 CURSOR_OIDC_SUBJECT=user:dev-local-subject
 EOF
@@ -56,6 +57,21 @@ EOF
 
 Rendered output lands in `config/.generated/` (gitignored). Replace with real
 identifiers before any real deploy.
+
+Do **not** put a Vercel token in `.env`. Use `make secret-vercel-token` with
+Secret Manager (see `docs/milestone-l-vercel.md`).
+
+### Deployment-owned providers
+
+`providers/vercel/` is a stdlib-only Go exec provider built into the runtime
+overlay. Local checks:
+
+```bash
+make test-providers   # or: cd providers/vercel && go test ./...
+```
+
+Uses only fake tokens. Requires Go on the host (Docker build uses `golang:1.26`
+and does not need host Go for `make build`).
 
 ### Build + run the broker locally (the local "hello world")
 

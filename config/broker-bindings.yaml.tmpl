@@ -1,6 +1,8 @@
-# Server-side exec bindings: broker mints short-lived derived tokens.
+# Server-side exec bindings: broker fulfills capabilities via exec providers.
 # Durable keys live in Secret Manager and are mounted under /run/secrets/ at deploy.
 # Rendered by `make render-config` from this template + .env.
+# GitHub/GA providers mint short-lived derived tokens; vercel.diagnostics returns
+# static VERCEL_TOKEN Material (Milestone L — see docs/milestone-l-vercel.md).
 version: "0.1"
 
 capabilities:
@@ -28,3 +30,13 @@ ${GITHUB_REPOSITORIES_YAML}
         propertyId: "${GA_PROPERTY_ID}"
         serviceAccountFile: "/run/secrets/google-analytics/sa.json"
         scope: https://www.googleapis.com/auth/analytics.readonly
+
+  # Deployment-owned Milestone L dogfood (opaque, non-normative capability id).
+  # Static Material from Secret Manager — not a PADE-standardized Vercel capability.
+  vercel.diagnostics:
+    provider: exec
+    exec:
+      command: ["/providers/pade-provider-vercel"]
+      config:
+        tokenFile: "/run/secrets/vercel/token"
+        tokenEnv: VERCEL_TOKEN

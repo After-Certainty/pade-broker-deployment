@@ -1,6 +1,7 @@
 # Agent-side bindings for a Cursor Cloud Agent (or local Consumer).
 # Point endpoint + audience at your Cloud Run broker URL.
-# The agent VM must NOT hold App keys, service account JSON, or derived tokens.
+# The agent VM must NOT hold App keys, service account JSON, Vercel tokens, or
+# other durable credentials. Material is injected only for `pade exec` children.
 #
 # Copy and replace YOUR-BROKER-URL (same value as oidc.audience on the broker),
 # or run: make print-agent-bindings
@@ -14,6 +15,13 @@ capabilities:
       audience: https://YOUR-BROKER-URL
 
   google-analytics.read:
+    provider: broker
+    broker:
+      endpoint: https://YOUR-BROKER-URL
+      audience: https://YOUR-BROKER-URL
+
+  # Milestone L: ordinary Vercel CLI receives VERCEL_TOKEN Material from the broker.
+  vercel.diagnostics:
     provider: broker
     broker:
       endpoint: https://YOUR-BROKER-URL
