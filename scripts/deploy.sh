@@ -23,7 +23,21 @@ ENV_VARS="PADE_VERSION=${PADE_VERSION},PADE_REF=${PADE_REF}"
 if [[ -n "${DEPLOYMENT_GIT_SHA:-}" ]]; then
   ENV_VARS="${ENV_VARS},DEPLOYMENT_GIT_SHA=${DEPLOYMENT_GIT_SHA}"
 fi
-SECRETS="${GITHUB_KEY_MOUNT}=${GITHUB_APP_KEY_SECRET}:latest,${GA_SA_MOUNT}=${GA_SA_SECRET}:latest,${VERCEL_TOKEN_MOUNT}=${VERCEL_TOKEN_SECRET}:latest"
+
+# Always mount GitHub App PEM + GA SA. Shared Vercel token (Milestone L) is opt-in:
+# set MOUNT_SHARED_VERCEL_TOKEN=1 when using static-token-file fulfillment.
+# Milestone M subject-secret-wif does not use this mount.
+SECRETS="${GITHUB_KEY_MOUNT}=${GITHUB_APP_KEY_SECRET}:latest,${GA_SA_MOUNT}=${GA_SA_SECRET}:latest"
+case "${MOUNT_SHARED_VERCEL_TOKEN:-0}" in
+  1|true|TRUE|yes|YES)
+    SECRETS="${SECRETS},${VERCEL_TOKEN_MOUNT}=${VERCEL_TOKEN_SECRET}:latest"
+    echo "==> Mounting shared Vercel token (${VERCEL_TOKEN_SECRET} → ${VERCEL_TOKEN_MOUNT})"
+    ;;
+  *)
+    echo "==> Omitting shared Vercel token mount (Milestone M / subject-secret-wif)"
+    echo "    Set MOUNT_SHARED_VERCEL_TOKEN=1 to remount for Milestone L static-token-file."
+    ;;
+esac
 
 echo "==> gcloud run deploy ${SERVICE}"
 echo "    image=${RT}"

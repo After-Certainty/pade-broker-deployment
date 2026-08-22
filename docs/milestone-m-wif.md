@@ -6,7 +6,7 @@ as defined in the upstream
 (*Milestone M — Subject-bound authority (Google WIF experiment)*).
 
 Milestone L (shared organizational Vercel Material) is **complete** in this repo
-and remains the default production path. See
+and remains available as an opt-in shared-authority path. See
 [`milestone-l-vercel.md`](milestone-l-vercel.md).
 
 ## Milestone L + CI/CD verification (precondition)
@@ -14,7 +14,7 @@ and remains the default production path. See
 | Area | Status | Evidence |
 |------|--------|----------|
 | Deployment-owned Vercel exec provider | Done | [`providers/vercel/`](../providers/vercel/) |
-| Secret Manager `vercel-token` + Cloud Run mount | Done | `make secret-vercel-token`, [`scripts/deploy.sh`](../scripts/deploy.sh) |
+| Secret Manager `vercel-token` + Cloud Run mount | Done (opt-in) | `make secret-vercel-token`; mount only if `MOUNT_SHARED_VERCEL_TOKEN=1` |
 | Binding + policy for `vercel.diagnostics` | Done | [`config/broker-bindings.yaml.tmpl`](../config/broker-bindings.yaml.tmpl), [`config/broker-policy.yaml.tmpl`](../config/broker-policy.yaml.tmpl) |
 | Provider unit tests | Done | `make test-providers` |
 | Docs / validation Stage 6 | Done | this tree + [`validation.md`](validation.md) |
@@ -168,6 +168,17 @@ Exec Request shape on broker v0.1.1+ (when verify succeeds):
    use `subject-secret-wif`; master pipeline does this on merge).
 6. Acceptance: subject A and B resolve the **same** capability to **different**
    Vercel Material; cross-subject Secret Manager access denied by IAM.
+
+### Dropping the shared Milestone L secret
+
+With `subject-secret-wif` active, deploys omit `/run/secrets/vercel/token` unless
+`MOUNT_SHARED_VERCEL_TOKEN=1`. After a deploy without that mount:
+
+```bash
+gcloud secrets delete vercel-token --project="$PROJECT_ID"
+```
+
+Subject-bound secrets (`vercel-token-sub-…`) are unchanged.
 
 ### Troubleshooting broker 502 on `vercel.diagnostics`
 

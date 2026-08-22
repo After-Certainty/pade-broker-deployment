@@ -146,12 +146,13 @@ Durable keys go to Google Cloud Secret Manager. Populate them via Make (stdin or
 |-------------------|------------|
 | `github-app-private-key` | `/run/secrets/github-app/private-key.pem` |
 | `google-analytics-sa` | `/run/secrets/google-analytics/sa.json` |
-| `vercel-token` | `/run/secrets/vercel/token` |
+| `vercel-token` | `/run/secrets/vercel/token` (opt-in; Milestone L only) |
 
 Cloud Run allows one secret volume per mount directory — each secret uses its own subdirectory.
 
-Vercel token walkthrough (UI scope, history-safe capture, metadata-only checks):
-[`docs/milestone-l-vercel.md`](docs/milestone-l-vercel.md).
+Shared `vercel-token` is **not** mounted by default (Milestone M uses subject-bound
+secrets via WIF). Set `MOUNT_SHARED_VERCEL_TOKEN=1` for Milestone L static-token-file.
+Walkthrough: [`docs/milestone-l-vercel.md`](docs/milestone-l-vercel.md).
 
 ## Capabilities
 

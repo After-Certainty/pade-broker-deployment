@@ -102,7 +102,7 @@ set matching names in the Environment and extend the workflow `.env` writer.
 |-------------------|---------|
 | `github-app-private-key` | GitHub App PEM |
 | `google-analytics-sa` | GA service-account JSON |
-| `vercel-token` | Vercel access token |
+| `vercel-token` | Shared Vercel access token (Milestone L; mount opt-in via `MOUNT_SHARED_VERCEL_TOKEN=1`) |
 
 ---
 
