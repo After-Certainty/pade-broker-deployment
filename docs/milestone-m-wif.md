@@ -157,15 +157,25 @@ Exec Request shape on broker v0.1.1+ (when verify succeeds):
 ## Operator checklist
 
 1. Deploy against broker **v0.1.1+** (digest-pinned in [`versions.env`](../versions.env)).
-2. `make bootstrap-cursor-wif` (once per project; admin).
+2. `make bootstrap-cursor-wif` (once per project; admin). Must set
+   `--allowed-audiences` to the broker URL (Cursor token `aud`). Re-run after
+   the broker URL changes.
 3. Allowlist subjects: set `CURSOR_OIDC_SUBJECTS=subject-a,subject-b` in `.env`
    (or keep single `CURSOR_OIDC_SUBJECT`).
 4. For each subject: `SUBJECT=… VERCEL_TOKEN=… make secret-vercel-token-subject`
    (history-safe `read -rsp` recommended).
 5. `make render-config && make build && make push && make deploy` (bindings already
-   use `subject-secret-wif`).
+   use `subject-secret-wif`; master pipeline does this on merge).
 6. Acceptance: subject A and B resolve the **same** capability to **different**
    Vercel Material; cross-subject Secret Manager access denied by IAM.
+
+### Troubleshooting broker 502 on `vercel.diagnostics`
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| STS exchange fails / 502 after M flip | WIF provider missing broker URL in allowed audiences | Re-run `make bootstrap-cursor-wif` (sets `--allowed-audiences=${BROKER_URL}`) |
+| Secret Manager access denied | Federated principal IAM missing on subject secret | Re-run `make secret-vercel-token-subject` for that subject |
+| Identity missing in provider | Broker &lt; v0.1.1 | Pin/deploy broker v0.1.1+ |
 
 ## What this is / is not
 
