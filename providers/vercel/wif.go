@@ -122,7 +122,15 @@ func exchangeSTS(cfg providerConfig, idToken string) (string, error) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("sts token exchange returned HTTP %d", resp.StatusCode)
+		// Surface status + truncated body for operator diagnosis (no subject_token echo).
+		detail := strings.TrimSpace(string(body))
+		if len(detail) > 240 {
+			detail = detail[:240] + "…"
+		}
+		if detail == "" {
+			return "", fmt.Errorf("sts token exchange returned HTTP %d", resp.StatusCode)
+		}
+		return "", fmt.Errorf("sts token exchange returned HTTP %d: %s", resp.StatusCode, detail)
 	}
 	var parsed struct {
 		AccessToken string `json:"access_token"`
@@ -151,7 +159,14 @@ func accessSecretVersion(projectNumber, secretID, accessToken string) (string, e
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("secretmanager access returned HTTP %d", resp.StatusCode)
+		detail := strings.TrimSpace(string(body))
+		if len(detail) > 240 {
+			detail = detail[:240] + "…"
+		}
+		if detail == "" {
+			return "", fmt.Errorf("secretmanager access returned HTTP %d", resp.StatusCode)
+		}
+		return "", fmt.Errorf("secretmanager access returned HTTP %d: %s", resp.StatusCode, detail)
 	}
 	var parsed struct {
 		Payload struct {

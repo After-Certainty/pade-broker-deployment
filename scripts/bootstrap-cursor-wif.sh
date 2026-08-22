@@ -28,9 +28,22 @@ PROVIDER_RESOURCE="${POOL_RESOURCE}/providers/${PROVIDER_ID}"
 # principal://.../subject/<sub> to per-subject secrets.
 ATTRIBUTE_MAPPING="google.subject=assertion.sub"
 
+# Broker-forwarded Cursor tokens have aud=<broker URL>. Without listing that
+# audience here, STS rejects the exchange (default aud is the provider resource name).
+if [[ -z "${BROKER_URL:-}" ]]; then
+  BROKER_URL="$(broker_url)"
+fi
+BROKER_URL="${BROKER_URL%/}"
+if [[ -z "${BROKER_URL}" || "${BROKER_URL}" != https://* ]]; then
+  echo "error: BROKER_URL must be the Cloud Run HTTPS audience (set in .env or via make predict-url)" >&2
+  exit 1
+fi
+ALLOWED_AUDIENCES="${BROKER_URL}"
+
 echo "==> Project ${PROJECT_ID} (number ${PROJECT_NUMBER})"
 echo "==> Cursor WIF pool ${POOL_ID} / provider ${PROVIDER_ID}"
 echo "==> Issuer ${ISSUER_URI}"
+echo "==> Allowed audiences (Cursor token aud) ${ALLOWED_AUDIENCES}"
 
 echo "==> Enabling APIs (STS + IAM + Secret Manager)"
 gcloud services enable \
@@ -59,13 +72,14 @@ if gcloud iam workload-identity-pools providers describe "${PROVIDER_ID}" \
   --project="${PROJECT_ID}" \
   --location="global" \
   --workload-identity-pool="${POOL_ID}" >/dev/null 2>&1; then
-  echo "    updating attribute mapping (idempotent)"
+  echo "    updating issuer, attribute mapping, and allowed audiences (idempotent)"
   gcloud iam workload-identity-pools providers update-oidc "${PROVIDER_ID}" \
     --project="${PROJECT_ID}" \
     --location="global" \
     --workload-identity-pool="${POOL_ID}" \
     --issuer-uri="${ISSUER_URI}" \
     --attribute-mapping="${ATTRIBUTE_MAPPING}" \
+    --allowed-audiences="${ALLOWED_AUDIENCES}" \
     --quiet
 else
   gcloud iam workload-identity-pools providers create-oidc "${PROVIDER_ID}" \
@@ -74,7 +88,8 @@ else
     --workload-identity-pool="${POOL_ID}" \
     --display-name="Cursor OIDC" \
     --issuer-uri="${ISSUER_URI}" \
-    --attribute-mapping="${ATTRIBUTE_MAPPING}"
+    --attribute-mapping="${ATTRIBUTE_MAPPING}" \
+    --allowed-audiences="${ALLOWED_AUDIENCES}"
 fi
 
 cat <<EOF
@@ -84,18 +99,21 @@ Bootstrap (Cursor WIF) complete.
 Pool:     ${POOL_RESOURCE}
 Provider: ${PROVIDER_RESOURCE}
 Issuer:   ${ISSUER_URI}
+Audiences:${ALLOWED_AUDIENCES}
 
 Next steps (Milestone M):
   1. Deploy against broker v0.1.1+ (identity forwarding; digest-pinned in versions.env).
   2. Allowlist subjects in .env (CURSOR_OIDC_SUBJECT or CURSOR_OIDC_SUBJECTS).
   3. For each subject:
        SUBJECT='user:…' VERCEL_TOKEN='…' make secret-vercel-token-subject
-  4. Keep production on Milestone L (static token mount) until ready, then switch
-     vercel.diagnostics exec config to fulfillment: subject-secret-wif
+  4. Ensure bindings use fulfillment: subject-secret-wif, then redeploy
      — see docs/milestone-m-wif.md.
 
 Federated principal form (Secret Manager IAM):
   principal://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL_ID}/subject/SUBJECT
 
 This pool is NOT the GitHub Actions deployer pool (${WIF_POOL_ID}).
+
+If vercel.diagnostics returns broker 502 after flipping to subject-secret-wif,
+re-run this script so allowed audiences include the broker URL (token aud).
 EOF
