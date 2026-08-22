@@ -44,7 +44,7 @@ Recorded in [`versions.env`](versions.env). Override any of these in `.env` if y
 | Broker (upstream) | `ghcr.io/ksteffe/pade-broker:v0.1.0` |
 | Broker digest | `sha256:e2f9364e018b1ae2c53ba742b71e2bf903fc606d2366752ff5f80888513003b8` |
 | Source commit | `0328fbf03827fb62681609b837e966b14ae64791` |
-| Runtime overlay tag | `pade-broker-runtime:v0.1.0` (your Artifact Registry) |
+| Runtime overlay tag | `pade-broker-runtime:${PADE_VERSION}` locally; CI uses full deployment-repo git SHA |
 
 This repo does **not** build `pade-broker` from source. `make build` pulls the
 released GHCR image and layers exec providers + rendered config on top.
@@ -114,6 +114,7 @@ make print-agent-bindings   # copy into the Cursor Cloud Agent
 | Target | What it does |
 |--------|----------------|
 | `make bootstrap-gcp` | Enable APIs; create Artifact Registry, runtime SA, IAM |
+| `make bootstrap-github-wif` | Deployer SA + GitHub OIDC / WIF pool (admin; rare) |
 | `make predict-url` | Print deterministic Cloud Run HTTPS URL |
 | `make render-config` | Render policy/bindings from templates + `.env` |
 | `make print-agent-bindings` | Print agent YAML pointed at the predicted URL |
@@ -129,6 +130,7 @@ make print-agent-bindings   # copy into the Cursor Cloud Agent
 | `make logs` | Recent broker Cloud Logging lines |
 | `make teardown-docs` | Print teardown commands (does not delete) |
 | `make test-providers` | Unit-test deployment-owned exec providers |
+| `make validate-remote` | `health` + `authz-smoke` against the deployed URL |
 
 ## What this repo builds vs pulls vs mounts
 
@@ -176,6 +178,8 @@ Milestone L Vercel acceptance is documented in [`docs/milestone-l-vercel.md`](do
 ## Provenance
 
 Cloud Run env vars set at deploy: `PADE_VERSION`, `PADE_REF` (from `versions.env`).
+GitHub Actions also sets `DEPLOYMENT_GIT_SHA` to the deployment-repo commit and
+tags the overlay image with that full SHA (`RUNTIME_IMAGE_TAG`).
 
 ## Teardown
 
@@ -183,11 +187,16 @@ Cloud Run env vars set at deploy: `PADE_VERSION`, `PADE_REF` (from `versions.env
 make teardown-docs
 ```
 
-## Later: GitHub Actions
+## GitHub Actions CI/CD
 
-See [`docs/github-actions.md`](docs/github-actions.md) — overlay build only; no PADE source clone for the broker.
+See [`docs/github-actions.md`](docs/github-actions.md) for CI, production deploy
+via Workload Identity Federation, Environment variables, IAM, and rollback notes.
+Overlay build only — no PADE source clone for the broker binary.
 
 ## Explicitly deferred
 
 Terraform, custom domains, multi-env, building unreleased PADE commits from this repo,
-Milestone M (subject-bound Vercel credentials / Google WIF).
+Milestone M (subject-bound Vercel credentials / Google WIF for provider Material).
+Narrowing the CI deployer from `roles/run.admin` to `roles/run.developer` after
+splitting invoker-IAM setup out of routine deploy (documented TODO in
+[`docs/github-actions.md`](docs/github-actions.md)).

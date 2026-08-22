@@ -7,7 +7,7 @@ SHELL := /bin/bash
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 SCRIPTS := $(ROOT)/scripts
 
-.PHONY: help bootstrap-gcp predict-url render-config print-agent-bindings \
+.PHONY: help bootstrap-gcp bootstrap-github-wif predict-url render-config print-agent-bindings \
 	pull-broker build push secret-github-app secret-ga-sa secret-vercel-token \
 	deploy health authz-smoke logs teardown-docs describe-url validate-remote \
 	test-providers
@@ -15,6 +15,7 @@ SCRIPTS := $(ROOT)/scripts
 help:
 	@echo "Targets:"
 	@echo "  bootstrap-gcp         Enable APIs; AR repo; runtime SA; IAM"
+	@echo "  bootstrap-github-wif  Deployer SA + GitHub OIDC / WIF (admin, rare)"
 	@echo "  predict-url           Print deterministic Cloud Run HTTPS URL"
 	@echo "  render-config         Render policy/bindings from templates + .env"
 	@echo "  print-agent-bindings  Print agent YAML pointed at the predicted URL"
@@ -31,9 +32,13 @@ help:
 	@echo "  describe-url          Print deployed status.url"
 	@echo "  teardown-docs         Print teardown commands (no deletes)"
 	@echo "  test-providers        Unit-test deployment-owned exec providers"
+	@echo "  validate-remote       health + authz-smoke against deployed URL"
 
 bootstrap-gcp:
 	@$(SCRIPTS)/bootstrap-gcp.sh
+
+bootstrap-github-wif:
+	@$(SCRIPTS)/bootstrap-github-wif.sh
 
 predict-url:
 	@$(SCRIPTS)/predict-broker-url.sh
