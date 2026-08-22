@@ -2,7 +2,9 @@
 # Rendered by `make render-config` from this template + .env. Does not contain credentials.
 #
 # oidc.audience is the Cloud Run URL (`make predict-url`, or BROKER_URL in .env).
-# subject is your Cursor workload identity (`pade identity --audience <BROKER_URL>`).
+# Subjects come from CURSOR_OIDC_SUBJECT or comma-separated CURSOR_OIDC_SUBJECTS
+# (`pade identity --audience <BROKER_URL>`). Multiple subjects enable Milestone M
+# A/B dogfood of the same capabilities.
 #
 # requireRepoURLs: false until Cursor attests complete repo_urls
 # (managed Cloud Agents often lack the full set).
@@ -14,9 +16,4 @@ oidc:
   # jwksURL defaults to https://api.cursor.com/keys when omitted
 
 policies:
-  - subject: "${CURSOR_OIDC_SUBJECT}"
-    requireRepoURLs: false
-    capabilities:
-      - github.repo.read
-      - google-analytics.read
-      - vercel.diagnostics
+${CURSOR_OIDC_POLICIES_YAML}

@@ -31,19 +31,39 @@ if [[ -z "${BROKER_URL:-}" ]]; then
 fi
 export BROKER_URL
 
+# Subjects: CURSOR_OIDC_SUBJECTS (comma-separated) wins; else CURSOR_OIDC_SUBJECT.
+SUBJECTS=()
+if [[ -n "${CURSOR_OIDC_SUBJECTS:-}" ]]; then
+  IFS=',' read -r -a _subjects <<< "${CURSOR_OIDC_SUBJECTS}"
+  for s in "${_subjects[@]}"; do
+    s="$(trim "${s}")"
+    [[ -z "${s}" ]] && continue
+    if is_placeholder "${s}"; then
+      echo "error: CURSOR_OIDC_SUBJECTS contains a placeholder value: ${s}" >&2
+      exit 1
+    fi
+    SUBJECTS+=("${s}")
+  done
+elif ! is_placeholder "${CURSOR_OIDC_SUBJECT:-}"; then
+  SUBJECTS+=("${CURSOR_OIDC_SUBJECT}")
+fi
+
 missing=()
-for v in GITHUB_APP_ID GITHUB_APP_INSTALLATION_ID GITHUB_REPOSITORIES GA_PROPERTY_ID CURSOR_OIDC_SUBJECT; do
+for v in GITHUB_APP_ID GITHUB_APP_INSTALLATION_ID GITHUB_REPOSITORIES GA_PROPERTY_ID; do
   if is_placeholder "${!v:-}"; then
     missing+=("${v}")
   fi
 done
+if ((${#SUBJECTS[@]} == 0)); then
+  missing+=("CURSOR_OIDC_SUBJECT or CURSOR_OIDC_SUBJECTS")
+fi
 
 if ((${#missing[@]} > 0)); then
   echo "error: set the following in .env (see .env.example):" >&2
   for v in "${missing[@]}"; do
     echo "  ${v}" >&2
   done
-  echo "hint: CURSOR_OIDC_SUBJECT comes from: pade identity --audience ${BROKER_URL}" >&2
+  echo "hint: subjects come from: pade identity --audience ${BROKER_URL}" >&2
   exit 1
 fi
 
@@ -60,6 +80,18 @@ if [[ -z "${GITHUB_REPOSITORIES_YAML}" ]]; then
 fi
 GITHUB_REPOSITORIES_YAML="${GITHUB_REPOSITORIES_YAML%$'\n'}"
 
+# One policy entry per subject; same capability set (Milestone M A/B dogfood).
+CURSOR_OIDC_POLICIES_YAML=""
+for subject in "${SUBJECTS[@]}"; do
+  CURSOR_OIDC_POLICIES_YAML+="  - subject: \"${subject}\""$'\n'
+  CURSOR_OIDC_POLICIES_YAML+="    requireRepoURLs: false"$'\n'
+  CURSOR_OIDC_POLICIES_YAML+="    capabilities:"$'\n'
+  CURSOR_OIDC_POLICIES_YAML+="      - github.repo.read"$'\n'
+  CURSOR_OIDC_POLICIES_YAML+="      - google-analytics.read"$'\n'
+  CURSOR_OIDC_POLICIES_YAML+="      - vercel.diagnostics"$'\n'
+done
+CURSOR_OIDC_POLICIES_YAML="${CURSOR_OIDC_POLICIES_YAML%$'\n'}"
+
 OUT_DIR="${ROOT}/config/.generated"
 mkdir -p "${OUT_DIR}"
 
@@ -69,7 +101,7 @@ render_template() {
   local content
   content="$(<"${tmpl}")"
   content="${content//\$\{BROKER_URL\}/${BROKER_URL}}"
-  content="${content//\$\{CURSOR_OIDC_SUBJECT\}/${CURSOR_OIDC_SUBJECT}}"
+  content="${content//\$\{CURSOR_OIDC_POLICIES_YAML\}/${CURSOR_OIDC_POLICIES_YAML}}"
   content="${content//\$\{GITHUB_APP_ID\}/${GITHUB_APP_ID}}"
   content="${content//\$\{GITHUB_APP_INSTALLATION_ID\}/${GITHUB_APP_INSTALLATION_ID}}"
   content="${content//\$\{GA_PROPERTY_ID\}/${GA_PROPERTY_ID}}"
@@ -87,4 +119,4 @@ render_template "${ROOT}/config/broker-bindings.yaml.tmpl" "$(bindings_file)"
 echo "==> Rendered $(policy_file_rel)"
 echo "==> Rendered $(bindings_file_rel)"
 echo "    audience=${BROKER_URL}"
-echo "    subject=${CURSOR_OIDC_SUBJECT}"
+echo "    subjects=${SUBJECTS[*]}"

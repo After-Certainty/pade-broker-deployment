@@ -33,6 +33,15 @@ ${GITHUB_REPOSITORIES_YAML}
 
   # Deployment-owned Milestone L dogfood (opaque, non-normative capability id).
   # Static Material from Secret Manager — not a PADE-standardized Vercel capability.
+  # Default production path remains static-token-file (Milestone L).
+  # For Milestone M (after PADE forwards broker-verified identity), switch config to:
+  #   fulfillment: subject-secret-wif
+  #   tokenEnv: VERCEL_TOKEN
+  #   projectNumber: "<GCP project number>"
+  #   poolId: pade-broker-cursor
+  #   providerId: cursor
+  #   secretIdPrefix: vercel-token-sub
+  # See docs/milestone-m-wif.md.
   vercel.diagnostics:
     provider: exec
     exec:

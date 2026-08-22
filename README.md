@@ -195,8 +195,11 @@ Overlay build only — no PADE source clone for the broker binary.
 
 ## Explicitly deferred
 
-Terraform, custom domains, multi-env, building unreleased PADE commits from this repo,
-Milestone M (subject-bound Vercel credentials / Google WIF for provider Material).
+Terraform, custom domains, multi-env, building unreleased PADE commits from this repo.
 Narrowing the CI deployer from `roles/run.admin` to `roles/run.developer` after
 splitting invoker-IAM setup out of routine deploy (documented TODO in
 [`docs/github-actions.md`](docs/github-actions.md)).
+
+Milestone M (subject-bound Vercel credentials / Google WIF) scaffolding lives in
+this repo — see [`docs/milestone-m-wif.md`](docs/milestone-m-wif.md). Live A/B E2E
+still needs a small generic PADE identity-context change (ROADMAP question #17).

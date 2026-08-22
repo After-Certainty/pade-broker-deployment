@@ -119,6 +119,19 @@ in the public [pade](https://github.com/After-Certainty/pade) repo.
 - [ ] `pade exec --capability vercel.diagnostics -- vercel whoami` (or inspect/logs)
       succeeds with no manually copied Vercel credential in the agent
 
+## Stage 7 — Milestone M subject-bound Material (scaffolded; E2E blocked on PADE)
+
+See [`milestone-m-wif.md`](milestone-m-wif.md). Operator prep in this repo:
+
+1. `make bootstrap-cursor-wif`
+2. Allowlist A/B subjects via `CURSOR_OIDC_SUBJECTS` and `make render-config`
+3. `SUBJECT=… VERCEL_TOKEN=… make secret-vercel-token-subject` per subject
+
+Full A/B acceptance (same `vercel.diagnostics` capability → different Material via
+WIF + Secret Manager IAM) requires PADE to forward broker-verified identity to
+trusted exec providers (ROADMAP question #17). Until then, keep production on
+Milestone L static token mounts.
+
 ## Logging expectations
 
 Broker stderr (Cloud Logging) includes request decisions with subject/capability.

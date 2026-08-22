@@ -7,38 +7,43 @@ SHELL := /bin/bash
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 SCRIPTS := $(ROOT)/scripts
 
-.PHONY: help bootstrap-gcp bootstrap-github-wif predict-url render-config print-agent-bindings \
-	pull-broker build push secret-github-app secret-ga-sa secret-vercel-token \
+.PHONY: help bootstrap-gcp bootstrap-github-wif bootstrap-cursor-wif predict-url render-config print-agent-bindings \
+	pull-broker build push secret-github-app secret-ga-sa secret-vercel-token secret-vercel-token-subject \
 	deploy health authz-smoke logs teardown-docs describe-url validate-remote \
 	test-providers
 
 help:
 	@echo "Targets:"
-	@echo "  bootstrap-gcp         Enable APIs; AR repo; runtime SA; IAM"
-	@echo "  bootstrap-github-wif  Deployer SA + GitHub OIDC / WIF (admin, rare)"
-	@echo "  predict-url           Print deterministic Cloud Run HTTPS URL"
-	@echo "  render-config         Render policy/bindings from templates + .env"
-	@echo "  print-agent-bindings  Print agent YAML pointed at the predicted URL"
-	@echo "  pull-broker           Pull released ghcr.io/ksteffe/pade-broker"
-	@echo "  build                 Render config; build runtime overlay"
-	@echo "  push                  Push runtime overlay to Artifact Registry"
-	@echo "  secret-github-app     Populate GitHub App PEM in Secret Manager (stdin/env)"
-	@echo "  secret-ga-sa          Populate GA service account JSON in Secret Manager (stdin/env)"
-	@echo "  secret-vercel-token   Populate Vercel access token in Secret Manager (stdin/env)"
-	@echo "  deploy                Deploy runtime image to Cloud Run"
-	@echo "  health                Stage 2 GET /healthz"
-	@echo "  authz-smoke           Stage 3 unauthenticated /v1/resolve → 401"
-	@echo "  logs                  Recent broker Cloud Logging lines"
-	@echo "  describe-url          Print deployed status.url"
-	@echo "  teardown-docs         Print teardown commands (no deletes)"
-	@echo "  test-providers        Unit-test deployment-owned exec providers"
-	@echo "  validate-remote       health + authz-smoke against deployed URL"
+	@echo "  bootstrap-gcp                Enable APIs; AR repo; runtime SA; IAM"
+	@echo "  bootstrap-github-wif         Deployer SA + GitHub OIDC / WIF (admin, rare)"
+	@echo "  bootstrap-cursor-wif         Cursor OIDC → GCP WIF pool (Milestone M)"
+	@echo "  predict-url                  Print deterministic Cloud Run HTTPS URL"
+	@echo "  render-config                Render policy/bindings from templates + .env"
+	@echo "  print-agent-bindings         Print agent YAML pointed at the predicted URL"
+	@echo "  pull-broker                  Pull released ghcr.io/ksteffe/pade-broker"
+	@echo "  build                        Render config; build runtime overlay"
+	@echo "  push                         Push runtime overlay to Artifact Registry"
+	@echo "  secret-github-app            Populate GitHub App PEM in Secret Manager (stdin/env)"
+	@echo "  secret-ga-sa                 Populate GA service account JSON in Secret Manager (stdin/env)"
+	@echo "  secret-vercel-token          Populate shared Vercel token (Milestone L)"
+	@echo "  secret-vercel-token-subject  Populate subject-bound Vercel token (Milestone M; SUBJECT=…)"
+	@echo "  deploy                       Deploy runtime image to Cloud Run"
+	@echo "  health                       Stage 2 GET /healthz"
+	@echo "  authz-smoke                  Stage 3 unauthenticated /v1/resolve → 401"
+	@echo "  logs                         Recent broker Cloud Logging lines"
+	@echo "  describe-url                 Print deployed status.url"
+	@echo "  teardown-docs                Print teardown commands (no deletes)"
+	@echo "  test-providers               Unit-test deployment-owned exec providers"
+	@echo "  validate-remote              health + authz-smoke against deployed URL"
 
 bootstrap-gcp:
 	@$(SCRIPTS)/bootstrap-gcp.sh
 
 bootstrap-github-wif:
 	@$(SCRIPTS)/bootstrap-github-wif.sh
+
+bootstrap-cursor-wif:
+	@$(SCRIPTS)/bootstrap-cursor-wif.sh
 
 predict-url:
 	@$(SCRIPTS)/predict-broker-url.sh
@@ -88,6 +93,9 @@ secret-ga-sa:
 
 secret-vercel-token:
 	@$(SCRIPTS)/populate-vercel-token-secret.sh
+
+secret-vercel-token-subject:
+	@$(SCRIPTS)/populate-vercel-token-subject-secret.sh
 
 test-providers:
 	@cd "$(ROOT)/providers/vercel" && go test ./...
