@@ -26,6 +26,9 @@ jobs:
       - name: Shellcheck scripts
         run: shellcheck scripts/*.sh
 
+      - name: Subject config contract test
+        run: make test-config-contract
+
       - name: Set up Go
         # actions/setup-go@v7.0.0
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e

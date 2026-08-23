@@ -10,7 +10,7 @@ SCRIPTS := $(ROOT)/scripts
 .PHONY: help bootstrap-gcp bootstrap-github-wif bootstrap-cursor-wif predict-url render-config print-agent-bindings \
 	pull-broker build push secret-github-app secret-ga-sa secret-vercel-token secret-vercel-token-subject \
 	deploy health authz-smoke logs teardown-docs describe-url validate-remote \
-	test-providers
+	test-providers test-config-contract
 
 help:
 	@echo "Targets:"
@@ -34,6 +34,7 @@ help:
 	@echo "  describe-url                 Print deployed status.url"
 	@echo "  teardown-docs                Print teardown commands (no deletes)"
 	@echo "  test-providers               Unit-test deployment-owned exec providers"
+	@echo "  test-config-contract         Subject allowlist contract (GHA .env writer + render-config)"
 	@echo "  validate-remote              health + authz-smoke against deployed URL"
 
 bootstrap-gcp:
@@ -99,6 +100,9 @@ secret-vercel-token-subject:
 
 test-providers:
 	@cd "$(ROOT)/providers/vercel" && go test ./...
+
+test-config-contract:
+	@$(SCRIPTS)/test-subject-config-contract.sh
 
 deploy:
 	@$(SCRIPTS)/deploy.sh
