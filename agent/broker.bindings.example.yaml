@@ -20,7 +20,8 @@ capabilities:
       endpoint: https://YOUR-BROKER-URL
       audience: https://YOUR-BROKER-URL
 
-  # Milestone L: ordinary Vercel CLI receives VERCEL_TOKEN Material from the broker.
+  # Ordinary Vercel CLI receives VERCEL_TOKEN Material from the broker
+  # (deployment default: subject-secret-wif; optional static-token-file compatibility).
   vercel.diagnostics:
     provider: broker
     broker:

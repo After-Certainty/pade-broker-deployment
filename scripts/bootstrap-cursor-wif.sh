@@ -101,19 +101,19 @@ Provider: ${PROVIDER_RESOURCE}
 Issuer:   ${ISSUER_URI}
 Audiences:${ALLOWED_AUDIENCES}
 
-Next steps (Milestone M):
+Next steps (recommended subject-secret-wif path):
   1. Deploy against broker v0.1.1+ (identity forwarding; digest-pinned in versions.env).
   2. Allowlist subjects in .env (CURSOR_OIDC_SUBJECT or CURSOR_OIDC_SUBJECTS).
   3. For each subject:
        SUBJECT='user:…' VERCEL_TOKEN='…' make secret-vercel-token-subject
-  4. Ensure bindings use fulfillment: subject-secret-wif, then redeploy
-     — see docs/milestone-m-wif.md.
+  4. Bindings template already uses fulfillment: subject-secret-wif — render, build, push, deploy
+     (no shared vercel-token mount required). See docs/milestone-m-wif.md.
 
 Federated principal form (Secret Manager IAM):
   principal://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL_ID}/subject/SUBJECT
 
 This pool is NOT the GitHub Actions deployer pool (${WIF_POOL_ID}).
 
-If vercel.diagnostics returns broker 502 after flipping to subject-secret-wif,
+If vercel.diagnostics returns broker 502 under subject-secret-wif,
 re-run this script so allowed audiences include the broker URL (token aud).
 EOF

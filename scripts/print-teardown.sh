@@ -26,8 +26,10 @@ gcloud secrets delete ${GITHUB_APP_KEY_SECRET} --project=${PROJECT_ID}
 
 gcloud secrets delete ${GA_SA_SECRET} --project=${PROJECT_ID}
 
-gcloud secrets delete ${VERCEL_TOKEN_SECRET} --project=${PROJECT_ID}
+# Optional shared vercel-token (static-token-file only); skip if unused:
+# gcloud secrets delete ${VERCEL_TOKEN_SECRET} --project=${PROJECT_ID}
 
+# Subject-bound Vercel secrets (recommended path). Review federated-principal IAM before delete.
 # Milestone M subject-bound Vercel secrets (ids are vercel-token-sub-<hash>):
 # gcloud secrets list --project=${PROJECT_ID} --filter='name:vercel-token-sub-' \\
 #   --format='value(name)' | xargs -n1 -I{} gcloud secrets delete {} --project=${PROJECT_ID}
@@ -36,7 +38,8 @@ gcloud artifacts repositories delete ${AR_REPO} --location=${REGION} --project=$
 
 gcloud iam service-accounts delete ${SA} --project=${PROJECT_ID}
 
-# GitHub Actions WIF / deployer identity (if provisioned via make bootstrap-github-wif)
+# GitHub Actions deploy WIF / deployer identity (if provisioned via make bootstrap-github-wif)
+# Distinct from Cursor runtime WIF below.
 gcloud iam workload-identity-pools providers delete ${PROVIDER_ID} \\
   --project=${PROJECT_ID} --location=global --workload-identity-pool=${POOL_ID}
 
@@ -45,7 +48,8 @@ gcloud iam workload-identity-pools delete ${POOL_ID} \\
 
 gcloud iam service-accounts delete ${DEPLOYER} --project=${PROJECT_ID}
 
-# Cursor OIDC WIF (Milestone M; if provisioned via make bootstrap-cursor-wif)
+# Cursor runtime OIDC WIF (subject-bound Secret Manager authority; if provisioned via make bootstrap-cursor-wif)
+# Distinct from GitHub Actions deploy WIF above.
 gcloud iam workload-identity-pools providers delete ${CURSOR_PROVIDER_ID} \\
   --project=${PROJECT_ID} --location=global --workload-identity-pool=${CURSOR_POOL_ID}
 

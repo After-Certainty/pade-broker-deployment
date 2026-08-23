@@ -11,33 +11,121 @@ The broker binary comes from the **released GHCR image**. This repo only:
 
 Protocol / identity docs: [cursor-oidc-broker-dogfood.md](https://github.com/After-Certainty/pade/blob/main/docs/cursor-oidc-broker-dogfood.md)
 Release: [pade v0.1.1](https://github.com/After-Certainty/pade/releases/tag/v0.1.1)
+Roadmap (Milestones L–O): [ROADMAP.md](https://github.com/After-Certainty/pade/blob/main/ROADMAP.md)
+
+## Responsibility split
+
+| Layer | Owns | Does not own |
+|-------|------|----------------|
+| **PADE core** | Portable capability intent, Broker/Consumer contracts, generic Material, broker-verified identity context for trusted broker-side exec providers (v0.1.1) | Vercel (or other vendor) providers, schemas, SDKs, CLIs, or user→secret tables |
+| **This deployment repo** | Concrete policy/bindings, deployment-owned exec providers, Cloud Run + Secret Manager layout, GitHub deploy WIF, Cursor runtime WIF, IAM, Vercel fulfillment | PADE protocol changes; durable credentials on the agent VM |
+| **Consumer / Cloud Agent** | Ordinary vendor tools (e.g. Vercel CLI) under released PADE tooling (`pade exec`); receives Material only for scoped children | Durable App keys, SA JSON, or Vercel tokens on the VM |
+
+A new reader should **not** conclude that PADE itself contains a Vercel provider. Vercel fulfillment lives only under [`providers/vercel/`](providers/vercel/) in this repository.
 
 ## Architecture
 
 ```text
-ghcr.io/after-certainty/pade-broker@v0.1.1  (released; digest-pinned in versions.env)
+ghcr.io/after-certainty/pade-broker:v0.1.1  (released; digest-pinned in versions.env)
         +
 runtime overlay  (exec providers + rendered policy/bindings → your Artifact Registry)
         +
-Google Cloud Run  (-tls-termination=proxy, Secret Manager file mounts)
+Google Cloud Run  (proxy TLS termination, Secret Manager file mounts)
         +
 Cursor Cloud Agent  (provider: broker, short-lived OIDC JWT)
 ```
 
-The overlay ships PADE reference exec providers (GitHub App installation tokens +
-Google OAuth access tokens) plus a **deployment-owned** Vercel provider that
-returns static `VERCEL_TOKEN` Material from Secret Manager (Milestone L dogfood —
-not PADE core).
+### Recommended Vercel path (`fulfillment: subject-secret-wif`)
 
-Durable authority stays on the broker. The agent receives only Material for the
-scoped child execution (`pade exec`).
+```text
+Cursor workload identity (OIDC JWT)
+        ↓
+PADE broker verifies + authorizes
+        ↓
+trusted deployment-owned exec provider
+        ↓
+Google STS / Cursor→GCP WIF
+        ↓
+subject-specific Google principal
+        ↓
+Secret Manager IAM
+        ↓
+subject-specific Vercel token
+        ↓
+generic PADE Material { env: { VERCEL_TOKEN: "…" } }
+        ↓
+ordinary Vercel CLI
+```
 
-Do not commit `.env`, PEMs, service-account JSON, or Vercel tokens. Policy/bindings
-YAML is rendered at build time from templates + `.env` and is gitignored.
+The provider derives the subject-specific Secret Manager id **deterministically** from the verified subject (hash prefix). That naming convention is **not** authorization. Google IAM on the federated principal is the authorization boundary. Before federation, the provider validates that `identity.subject` matches the `sub` claim of the forwarded `idToken` when both are present.
+
+### Two WIF trust paths (do not conflate)
+
+```text
+GitHub Actions
+    ↓ GitHub OIDC
+deployment WIF pool/provider (pade-broker-github)
+    ↓
+Cloud Run deployment authority (deployer SA)
+
+Cursor Cloud Agent
+    ↓ Cursor OIDC
+runtime WIF pool/provider (pade-broker-cursor)
+    ↓
+subject-bound Secret Manager authority (federated principal per subject)
+```
+
+| Path | Identity | Purpose |
+|------|----------|---------|
+| **GitHub Actions → GCP** | GitHub OIDC → deployer SA | CI/CD: push overlay, deploy Cloud Run |
+| **Cursor → GCP** | Cursor OIDC (broker-verified) → federated subject | Runtime: subject-bound Secret Manager access for Vercel Material |
+
+### Runtime service account vs federated subject
+
+| Authority | Holder |
+|-----------|--------|
+| Mounted GitHub App PEM + GA SA JSON | Cloud Run **runtime** service account (Secret Manager accessor on those secrets) |
+| Optional shared `vercel-token` mount | Runtime SA — **only** when `MOUNT_SHARED_VERCEL_TOKEN=1` (static-token-file / Milestone L) |
+| Per-subject `vercel-token-sub-*` secrets | **Federated Cursor subject** principals via Cursor WIF — **not** the runtime SA |
+
+A normal Milestone M-style deploy does **not** require the shared Vercel token mount.
+
+### PADE v0.1.1 identity seam
+
+The broker already verified the workload identity. A trusted broker-side exec provider may receive that verified identity context so it can participate in downstream federation:
+
+- broker-side only, after verify + authorize
+- exact presented ID token + verified subject
+- **not** portable Intent, **not** consumer configuration, **not** a PADE user database
+- does **not** make PADE an identity provider or introduce vendor identity semantics into PADE
+
+See upstream [`docs/provider-contract.md`](https://github.com/After-Certainty/pade/blob/v0.1.1/docs/provider-contract.md).
+
+### Static-token-file vs subject-secret-wif
+
+| Mode | Role |
+|------|------|
+| **`subject-secret-wif`** (template default) | Recommended production / dogfood path: subject-bound downstream authority |
+| **`static-token-file`** | Milestone L proof and optional compatibility / local / fallback: one shared deployment-owned token |
+
+When `fulfillment` is omitted in provider config, the Go provider falls back to `static-token-file` for compatibility. Deployed bindings in this repo **always set** `fulfillment: subject-secret-wif`.
+
+`MOUNT_SHARED_VERCEL_TOKEN=1` is required only for static-token-file (shared Cloud Run mount). Subject-secret-wif does not use that mount.
+
+### What the dogfood proved
+
+Milestones **L–O are complete** (see PADE ROADMAP). Architecturally:
+
+- Vendor integrations can remain deployment-owned; PADE need not grow a Vercel provider
+- Generic Material was sufficient for ordinary CLI use
+- The external-provider / exec seam worked
+- One generic gap (broker-verified identity for trusted exec) was fixed in **v0.1.1**
+- Downstream IAM can provide per-subject authority without PADE maintaining user→secret mappings
+- Milestone O concluded there is currently **no** justification for additional PADE protocol work
 
 ## Image pins
 
-Recorded in [`versions.env`](versions.env). Override any of these in `.env` if you deploy a PADE fork.
+Recorded in [`versions.env`](versions.env). Override in `.env` only if you deploy a PADE fork.
 
 | Artifact | Value |
 |----------|--------|
@@ -46,8 +134,7 @@ Recorded in [`versions.env`](versions.env). Override any of these in `.env` if y
 | Source commit | `7cecd5e88f74ed47af74a6d09289c7bd1aeac566` |
 | Runtime overlay tag | `pade-broker-runtime:${PADE_VERSION}` locally; CI uses full deployment-repo git SHA |
 
-This repo does **not** build `pade-broker` from source. `make build` pulls the
-released GHCR image and layers exec providers + rendered config on top.
+This repo does **not** build `pade-broker` from source. `make build` pulls the released GHCR image and layers exec providers + rendered config on top.
 
 ## Prerequisites
 
@@ -55,7 +142,8 @@ released GHCR image and layers exec providers + rendered config on top.
 - [Google Cloud SDK](https://cloud.google.com/sdk) (`gcloud`), authenticated to a project with billing enabled
 - A GitHub App installed on the repos you will expose (`metadata:read`, `contents:read`)
 - A Google service account with access to the GA4 property you will expose
-- A Vercel access token in Secret Manager for Milestone L (see [docs/milestone-l-vercel.md](docs/milestone-l-vercel.md))
+- For recommended Vercel path: Cursor WIF bootstrap + per-subject Vercel tokens in Secret Manager (see [docs/milestone-m-wif.md](docs/milestone-m-wif.md))
+- Optional: shared Vercel token + `MOUNT_SHARED_VERCEL_TOKEN=1` for static-token-file only ([docs/milestone-l-vercel.md](docs/milestone-l-vercel.md))
 - Network access to pull from `ghcr.io` (public package; no auth required)
 - A Cursor Cloud Agent (or other PADE consumer) to obtain your OIDC subject
 
@@ -75,35 +163,42 @@ cp .env.example .env
 | `GITHUB_APP_INSTALLATION_ID` | yes | Installation id on the org/account where the App is installed |
 | `GITHUB_REPOSITORIES` | yes | Comma-separated `owner/repo` the App may mint tokens for |
 | `GA_PROPERTY_ID` | yes | GA4 property resource name, e.g. `properties/123456789` |
-| `CURSOR_OIDC_SUBJECT` | yes | From a Cursor Cloud Agent: `pade identity --audience "$(make -s predict-url)"` |
+| `CURSOR_OIDC_SUBJECT` | yes* | From a Cursor Cloud Agent: `pade identity --audience "$(make -s predict-url)"` |
+| `CURSOR_OIDC_SUBJECTS` | no | Comma-separated subjects for A/B isolation dogfood (overrides single subject) |
 | `BROKER_URL` | no | Defaults to the predicted Cloud Run URL |
 | `REGION`, `SERVICE`, image pins | no | Override [`versions.env`](versions.env) defaults |
 
-`CURSOR_OIDC_SUBJECT` uses the **predicted** audience. You can set it before the first deploy; the broker does not need to be up for `pade identity`.
+\* Or set `CURSOR_OIDC_SUBJECTS`. Audience uses the **predicted** URL; the broker need not be up for `pade identity`.
 
-## Quick start
+## Quick start (recommended: subject-secret-wif)
 
 ```bash
 cp .env.example .env
-# edit .env — PROJECT_ID, GitHub App ids, GA property, Cursor subject
+# edit .env — PROJECT_ID, GitHub App ids, GA property, Cursor subject(s)
 
 make bootstrap-gcp
 make predict-url
+make bootstrap-cursor-wif   # once per project; allowed audiences = broker URL
 
 # Durable keys → Secret Manager (values never printed or committed)
 GITHUB_APP_PRIVATE_KEY="$(cat github-app.pem)" make secret-github-app
 GOOGLE_ANALYTICS_SA_JSON="$(cat ga-sa.json)" make secret-ga-sa
-read -rsp "Vercel token: " VERCEL_TOKEN && echo && export VERCEL_TOKEN
-make secret-vercel-token
+
+# Per-subject Vercel tokens (IAM to federated principal, not runtime SA)
+read -rsp "Vercel token for subject A: " VERCEL_TOKEN && echo && export VERCEL_TOKEN
+SUBJECT='user:SUBJECT_A' make secret-vercel-token-subject
 unset VERCEL_TOKEN
+# repeat SUBJECT=… for each allowlisted subject
 
 make build    # render config, pull GHCR broker, build runtime overlay
 make push
-make deploy
+make deploy   # omits shared vercel-token mount by default
 
 make validate-remote
 make print-agent-bindings   # copy into the Cursor Cloud Agent
 ```
+
+For the optional shared-token path instead, see [docs/milestone-l-vercel.md](docs/milestone-l-vercel.md) (`make secret-vercel-token` + `MOUNT_SHARED_VERCEL_TOKEN=1` + static-token-file binding).
 
 ## Make targets
 
@@ -111,6 +206,7 @@ make print-agent-bindings   # copy into the Cursor Cloud Agent
 |--------|----------------|
 | `make bootstrap-gcp` | Enable APIs; create Artifact Registry, runtime SA, IAM |
 | `make bootstrap-github-wif` | Deployer SA + GitHub OIDC / WIF pool (admin; rare) |
+| `make bootstrap-cursor-wif` | Cursor OIDC → GCP WIF pool (runtime subject-bound authority) |
 | `make predict-url` | Print deterministic Cloud Run HTTPS URL |
 | `make render-config` | Render policy/bindings from templates + `.env` |
 | `make print-agent-bindings` | Print agent YAML pointed at the predicted URL |
@@ -119,11 +215,13 @@ make print-agent-bindings   # copy into the Cursor Cloud Agent
 | `make push` | Push runtime overlay to Artifact Registry |
 | `make secret-github-app` | Pipe GitHub App PEM into Secret Manager |
 | `make secret-ga-sa` | Pipe GA service account JSON into Secret Manager |
-| `make secret-vercel-token` | Pipe Vercel access token into Secret Manager |
+| `make secret-vercel-token` | Pipe shared Vercel token (static-token-file / Milestone L) |
+| `make secret-vercel-token-subject` | Pipe subject-bound Vercel token (`SUBJECT=…`) |
 | `make deploy` | Deploy runtime image; mount secrets as files |
 | `make health` | Stage 2 liveness |
 | `make authz-smoke` | Stage 3: unauthenticated `/v1/resolve` → 401 |
 | `make logs` | Recent broker Cloud Logging lines |
+| `make describe-url` | Print deployed `status.url` |
 | `make teardown-docs` | Print teardown commands (does not delete) |
 | `make test-providers` | Unit-test deployment-owned exec providers |
 | `make validate-remote` | `health` + `authz-smoke` against the deployed URL |
@@ -134,25 +232,20 @@ make print-agent-bindings   # copy into the Cursor Cloud Agent
 |-----------|--------|
 | `pade-broker` binary | **Pull** `ghcr.io/after-certainty/pade-broker@sha256:6c03d754…` |
 | GitHub + GA exec providers | **Build** from PADE `v0.1.1` tag during `docker build` |
-| Vercel exec provider | **Build** from `providers/vercel` in this repo (Milestone L) |
-| Policy / bindings | **Render** from `config/*.yaml.tmpl` + `.env`, then copy into the overlay |
-| App PEM / SA JSON / Vercel token | **Mount** from Secret Manager at deploy |
+| Vercel exec provider | **Build** from `providers/vercel` in this repo (deployment-owned) |
+| Policy / bindings | **Render** from `config/broker-*.yaml.tmpl` + `.env`, then copy into the overlay |
+| App PEM / SA JSON | **Mount** from Secret Manager at deploy |
+| Shared Vercel token | **Mount** only if `MOUNT_SHARED_VERCEL_TOKEN=1` |
+| Subject Vercel tokens | **Fetched at resolve time** via Cursor WIF (not mounted on Cloud Run) |
 
 ## Secret setup
 
-Durable keys go to Google Cloud Secret Manager. Populate them via Make (stdin or env). Do not commit the values.
-
-| Secret Manager id | Mounted at |
-|-------------------|------------|
-| `github-app-private-key` | `/run/secrets/github-app/private-key.pem` |
-| `google-analytics-sa` | `/run/secrets/google-analytics/sa.json` |
-| `vercel-token` | `/run/secrets/vercel/token` (opt-in; Milestone L only) |
-
-Cloud Run allows one secret volume per mount directory — each secret uses its own subdirectory.
-
-Shared `vercel-token` is **not** mounted by default (Milestone M uses subject-bound
-secrets via WIF). Set `MOUNT_SHARED_VERCEL_TOKEN=1` for Milestone L static-token-file.
-Walkthrough: [`docs/milestone-l-vercel.md`](docs/milestone-l-vercel.md).
+| Secret Manager id | Access |
+|-------------------|--------|
+| `github-app-private-key` | Mounted for runtime SA at `/run/secrets/github-app/private-key.pem` |
+| `google-analytics-sa` | Mounted for runtime SA at `/run/secrets/google-analytics/sa.json` |
+| `vercel-token` | Optional shared mount at `/run/secrets/vercel/token` (static-token-file only) |
+| `vercel-token-sub-<hash>` | Per-subject; IAM to federated Cursor principal only |
 
 ## Capabilities
 
@@ -160,17 +253,22 @@ Walkthrough: [`docs/milestone-l-vercel.md`](docs/milestone-l-vercel.md).
 |------------|-----------------|----------------|-------|
 | `github.repo.read` | `pade-provider-github` (from PADE) | Short-lived `GITHUB_TOKEN` | Reference provider |
 | `google-analytics.read` | `pade-provider-google-analytics` (from PADE) | `GA_ACCESS_TOKEN`, `GA_PROPERTY_ID` | Reference provider |
-| `vercel.diagnostics` | `pade-provider-vercel` (this repo) | Static `VERCEL_TOKEN` | Milestone L dogfood; opaque id |
+| `vercel.diagnostics` | `pade-provider-vercel` (this repo) | `VERCEL_TOKEN` Material | Opaque id; default fulfillment `subject-secret-wif` |
 
 Agent-side example: [`agent/broker.bindings.example.yaml`](agent/broker.bindings.example.yaml) or `make print-agent-bindings`.
 
-`vercel.diagnostics` does **not** restrict which Vercel operations the token can
-perform after Material delivery — see [docs/milestone-l-vercel.md](docs/milestone-l-vercel.md).
+`vercel.diagnostics` does **not** restrict which Vercel operations the token can perform after Material delivery. Downstream Vercel authorization remains authoritative. Prefer the narrowest Vercel scope and expiration Vercel offers; subject-bound WIF improves isolation but does **not** make a broad token read-only.
+
+## Security notes
+
+- Broker must not log identity tokens; provider must not log Vercel tokens
+- Secret Manager values must never appear in rendered config under `config/.generated/`
+- Capability name ≠ operation allowlist once an opaque vendor token is delivered
+- Do not print secret values during validation — use metadata / successful downstream ops as evidence
 
 ## Validation
 
-See [`docs/validation.md`](docs/validation.md). Stages 4–6 run from a Cursor Cloud Agent.
-Milestone L Vercel acceptance is documented in [`docs/milestone-l-vercel.md`](docs/milestone-l-vercel.md).
+See [`docs/validation.md`](docs/validation.md). Recommended path covers health, authn, GitHub, GA, subject-secret-wif Vercel, ordinary Vercel CLI read diagnostics, and two-subject isolation where practical.
 
 ## Provenance
 
@@ -184,11 +282,11 @@ tags the overlay image with that full SHA (`RUNTIME_IMAGE_TAG`).
 make teardown-docs
 ```
 
+Prints inspectable delete commands for Cloud Run, secrets (shared + subject-bound), both WIF pools, and service accounts. Does **not** delete by default.
+
 ## GitHub Actions CI/CD
 
-See [`docs/github-actions.md`](docs/github-actions.md) for CI, production deploy
-via Workload Identity Federation, Environment variables, IAM, and rollback notes.
-Overlay build only — no PADE source clone for the broker binary.
+See [`docs/github-actions.md`](docs/github-actions.md) for CI, production deploy via **GitHub→GCP** WIF, Environment variables, IAM, and rollback notes. That deploy WIF is separate from **Cursor→GCP** runtime WIF. Overlay build only — no PADE source clone for the broker binary.
 
 ## Explicitly deferred
 
@@ -197,7 +295,4 @@ Narrowing the CI deployer from `roles/run.admin` to `roles/run.developer` after
 splitting invoker-IAM setup out of routine deploy (documented TODO in
 [`docs/github-actions.md`](docs/github-actions.md)).
 
-Milestone M (subject-bound Vercel credentials / Google WIF) scaffolding lives in
-this repo — see [`docs/milestone-m-wif.md`](docs/milestone-m-wif.md). Broker
-**v0.1.1** ships identity forwarding (ROADMAP #17); live A/B E2E still needs the
-operator WIF/secret checklist and an optional binding flip to `subject-secret-wif`.
+Historical Milestone L/M operator notes remain in [`docs/milestone-l-vercel.md`](docs/milestone-l-vercel.md) and [`docs/milestone-m-wif.md`](docs/milestone-m-wif.md); they describe completed work, not future scaffolding.
