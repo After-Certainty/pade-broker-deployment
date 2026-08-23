@@ -33,6 +33,7 @@ jobs:
       GITHUB_REPOSITORIES: ${{ vars.GH_REPOSITORIES }}
       GA_PROPERTY_ID: ${{ vars.GA_PROPERTY_ID }}
       CURSOR_OIDC_SUBJECT: ${{ vars.CURSOR_OIDC_SUBJECT }}
+      CURSOR_OIDC_SUBJECTS: ${{ vars.CURSOR_OIDC_SUBJECTS }}
     steps:
       - name: Checkout
         # actions/checkout@v7.0.1
@@ -50,32 +51,7 @@ jobs:
 
       - name: Write deployment .env from Environment variables
         # Identifiers only — PEMs / SA JSON / Vercel tokens stay in Secret Manager.
-        run: |
-          set -euo pipefail
-          required=(
-            PROJECT_ID
-            PROJECT_NUMBER
-            GITHUB_APP_ID
-            GITHUB_APP_INSTALLATION_ID
-            GITHUB_REPOSITORIES
-            GA_PROPERTY_ID
-            CURSOR_OIDC_SUBJECT
-          )
-          for v in "${required[@]}"; do
-            if [[ -z "${!v:-}" ]]; then
-              echo "error: GitHub Environment variable $v is unset (environment: production)" >&2
-              exit 1
-            fi
-          done
-          {
-            echo "PROJECT_ID=${PROJECT_ID}"
-            echo "PROJECT_NUMBER=${PROJECT_NUMBER}"
-            echo "GITHUB_APP_ID=${GITHUB_APP_ID}"
-            echo "GITHUB_APP_INSTALLATION_ID=${GITHUB_APP_INSTALLATION_ID}"
-            echo "GITHUB_REPOSITORIES=${GITHUB_REPOSITORIES}"
-            echo "GA_PROPERTY_ID=${GA_PROPERTY_ID}"
-            echo "CURSOR_OIDC_SUBJECT=${CURSOR_OIDC_SUBJECT}"
-          } > .env
+        run: ./scripts/write-production-env.sh
 
       - name: Authenticate to Google Cloud (WIF)
         # google-github-actions/auth@v3.0.0

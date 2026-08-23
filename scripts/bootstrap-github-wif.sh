@@ -162,7 +162,7 @@ Configure GitHub Environment "production" variables:
   GCP_WORKLOAD_IDENTITY_PROVIDER=${PROVIDER_RESOURCE}
   GCP_DEPLOYER_SERVICE_ACCOUNT=${DEPLOYER_SA_EMAIL}
   (+ GH_APP_ID, GH_APP_INSTALLATION_ID, GH_REPOSITORIES,
-     GA_PROPERTY_ID, CURSOR_OIDC_SUBJECT — see docs/github-actions.md)
+     GA_PROPERTY_ID, CURSOR_OIDC_SUBJECT or CURSOR_OIDC_SUBJECTS — see docs/github-actions.md)
 
 Trust model:
   Provider accepts only repository_id=${GITHUB_REPOSITORY_ID},

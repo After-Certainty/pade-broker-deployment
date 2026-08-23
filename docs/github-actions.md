@@ -91,7 +91,12 @@ Set on Environment **`production`** (non-secret identifiers):
 | `GH_APP_INSTALLATION_ID` | Installation id |
 | `GH_REPOSITORIES` | Comma-separated `owner/repo` list |
 | `GA_PROPERTY_ID` | `properties/…` |
-| `CURSOR_OIDC_SUBJECT` | Cursor OIDC subject allowlisted in broker policy |
+| `CURSOR_OIDC_SUBJECT` | Single Cursor OIDC subject allowlisted in broker policy (one-subject deploys) |
+| `CURSOR_OIDC_SUBJECTS` | Comma-separated Cursor OIDC subject allowlist (preferred when non-empty) |
+
+Set **at least one** of `CURSOR_OIDC_SUBJECT` or `CURSOR_OIDC_SUBJECTS`. If both are
+configured, `CURSOR_OIDC_SUBJECTS` wins — the same precedence as local `.env` and
+`make render-config` (see [`scripts/render-config.sh`](../scripts/render-config.sh)).
 
 Optional overrides (only if you diverge from [`versions.env`](../versions.env)):
 set matching names in the Environment and extend the workflow `.env` writer.
