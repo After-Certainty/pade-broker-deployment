@@ -102,11 +102,46 @@ set matching names in the Environment and extend the workflow `.env` writer.
 |-------------------|---------|
 | `github-app-private-key` | GitHub App PEM |
 | `google-analytics-sa` | GA service-account JSON |
-| `vercel-token` | Shared Vercel access token (Milestone L; mount opt-in via `MOUNT_SHARED_VERCEL_TOKEN=1`) |
+| `vercel-token` | Optional shared Vercel token (`static-token-file` / Milestone L only; mount via `MOUNT_SHARED_VERCEL_TOKEN=1`). Recommended path uses per-subject secrets — see [`milestone-m-wif.md`](milestone-m-wif.md). |
 
 ---
 
-## 5. WIF architecture
+## 5. Two WIF trust paths
+
+This repository uses **two distinct** Workload Identity Federation relationships.
+Do not describe them as one shared WIF mechanism.
+
+| Path | Trigger | Pool (default id) | Principal | Purpose |
+|------|---------|-------------------|-----------|---------|
+| **GitHub Actions → GCP** | CI/CD OIDC | `pade-broker-github` | Deployer SA | Push overlay, deploy Cloud Run |
+| **Cursor → GCP** | Runtime OIDC after broker verify | `pade-broker-cursor` | Federated Cursor subject | Subject-bound Secret Manager access for Vercel Material |
+
+```text
+GitHub Actions
+    ↓ GitHub OIDC
+deployment WIF pool/provider
+    ↓
+Cloud Run deployment authority
+
+Cursor Cloud Agent
+    ↓ Cursor OIDC
+runtime WIF pool/provider
+    ↓
+subject-bound Secret Manager authority
+```
+
+GitHub Actions workflows configure **only** the deploy path. Cursor runtime WIF is
+bootstrapped with `make bootstrap-cursor-wif` and documented in
+[`milestone-m-wif.md`](milestone-m-wif.md). Production Environment variables need the
+Cursor subject allowlist (`CURSOR_OIDC_SUBJECT` or subjects list) and, for Vercel
+subject-secret-wif, per-subject secrets populated outside GitHub (Secret Manager).
+
+Shared Secret Manager id `vercel-token` is optional (Milestone L / `static-token-file`).
+Recommended deploys use subject-bound secrets and omit
+`MOUNT_SHARED_VERCEL_TOKEN` (default).
+
+### 5a. GitHub Actions → GCP (deploy) WIF architecture
+
 
 ```text
 GitHub Actions (master only)
@@ -167,10 +202,16 @@ make bootstrap-gcp
 # Populate Secret Manager (unchanged)
 make secret-github-app
 make secret-ga-sa
-make secret-vercel-token
+# Optional shared token (static-token-file only):
+# make secret-vercel-token
+# Subject-bound tokens (recommended):
+# SUBJECT=… VERCEL_TOKEN=… make secret-vercel-token-subject
 
 # GitHub Actions: deployer SA + WIF pool/provider + deployer IAM
 make bootstrap-github-wif
+
+# Cursor runtime WIF (separate pool; required for subject-secret-wif):
+# make bootstrap-cursor-wif
 ```
 
 `make bootstrap-github-wif` is idempotent. It prints the

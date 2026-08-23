@@ -1,7 +1,27 @@
-# Milestone L — External CLI authority dogfood (Vercel)
+# Milestone L — Shared Vercel token (optional compatibility)
 
-This document is the deployment-side walkthrough for PADE **Milestone L**.
-Vercel is a concrete external dogfood case, **not** first-class PADE support.
+This document is the deployment-side walkthrough for PADE **Milestone L** (complete):
+proving that an ordinary Vercel CLI can consume **generic PADE Material** from a
+**deployment-owned** exec provider — with **no** Vercel provider, schema, SDK, or
+vocabulary added to PADE core.
+
+**Status:** Milestone L is **complete**. The recommended production / dogfood path is now
+**Milestone M** `subject-secret-wif` (see [`milestone-m-wif.md`](milestone-m-wif.md)).
+Keep this document for:
+
+- the historical L proof
+- optional compatibility / local / fallback shared-token deploys
+- operators who intentionally want one deployment-owned Vercel token
+
+## Mode comparison
+
+| Mode | Authority model | When to use |
+|------|-----------------|-------------|
+| **`static-token-file`** (this doc) | One shared deployment-owned token mounted on Cloud Run | Simple dogfood, local bring-up, or explicit compatibility |
+| **`subject-secret-wif`** (recommended) | Subject-bound token via Cursor WIF + Secret Manager IAM | Current default bindings; subject-isolated production path |
+
+Shared mount is **opt-in**: set `MOUNT_SHARED_VERCEL_TOKEN=1` when using static-token-file.
+A normal subject-secret-wif deploy does **not** need the shared mount.
 
 ## Ownership boundary
 
@@ -22,9 +42,9 @@ consumer / application repository
 ```
 
 Do **not** add a Vercel provider, schema, SDK, MCP integration, or Vercel-specific
-vocabulary to the `After-Certainty/pade` repository for this milestone.
+vocabulary to the `After-Certainty/pade` repository for this path.
 
-## Intended flow
+## Intended flow (static-token-file)
 
 ```text
 cloud DevelopmentSession
@@ -46,73 +66,51 @@ read-oriented inspection / logs / diagnostics
 
 | Id | Meaning |
 |----|---------|
-| `vercel.diagnostics` | Opaque, **non-normative**, deployment-chosen capability for Milestone L |
+| `vercel.diagnostics` | Opaque, **non-normative**, deployment-chosen capability |
 
-This is **not** a standardized PADE capability. Naming it `vercel.diagnostics`
-does **not** restrict which Vercel API or CLI operations the token can perform
-after Material is delivered. Downstream Vercel token scope remains authoritative.
+Naming it `vercel.diagnostics` does **not** restrict which Vercel API or CLI operations
+the token can perform after Material is delivered. Downstream Vercel token scope remains
+authoritative. Prefer the narrowest scope and expiration Vercel offers; this path does
+**not** make an inherently broad token read-only.
 
-## Broker / deployment responsibilities
+## Broker / deployment responsibilities (static-token-file)
 
 1. Store a Vercel access token in Secret Manager (`vercel-token`).
 2. Mount it at `/run/secrets/vercel/token` on Cloud Run by setting
-   `MOUNT_SHARED_VERCEL_TOKEN=1` for `make deploy` (omitted by default for Milestone M).
+   `MOUNT_SHARED_VERCEL_TOKEN=1` for `make deploy`.
 3. Ship `/providers/pade-provider-vercel` in the runtime overlay.
 4. Bind `vercel.diagnostics` → `provider: exec` with server-owned config
    (`tokenFile`, `tokenEnv`) — never put the token in rendered YAML or `.env`.
+   (Template default is `subject-secret-wif`; for this mode replace with static-token-file config.)
 5. Allow the capability for the configured Cursor OIDC subject in broker policy.
-6. Deliver Material only through the released broker’s `/v1/resolve` path.
+6. Deliver Material only through the released broker’s resolve path.
 
 The provider:
 
 - does **not** call the Vercel API or install/run the Vercel CLI
-- does **not** invent `expiresAt` (opaque token expiry is not known)
+- does **not** invent expiry when opaque token lifetime is unknown
 - returns static Material from the mounted file
+- must never write the token to stderr / logs
 
 ## Consumer / application responsibilities
 
 1. Install the ordinary Vercel CLI in the agent / app environment.
 2. Point agent bindings at the Cloud Run broker (`make print-agent-bindings`).
-3. Use non-secret project identifiers as needed by the CLI (project name/id,
-   team slug) — not secrets.
+3. Use non-secret project identifiers as needed by the CLI (project name/id, team slug).
 4. Run diagnostics via PADE:
 
 ```bash
 pade exec --capability vercel.diagnostics -- vercel whoami
-pade exec --capability vercel.diagnostics -- vercel project inspect <project>
-pade exec --capability vercel.diagnostics -- vercel inspect <deployment-url-or-id>
-pade exec --capability vercel.diagnostics -- vercel logs <deployment-url-or-id>
+pade exec --capability vercel.diagnostics -- vercel project ls
 ```
 
-Use current Vercel CLI syntax for your installed CLI version. Do **not** use
-`vercel deploy`, project deletion, env/domain mutation, or other write operations
-as the Milestone L acceptance test.
+Use read-oriented diagnostics only for acceptance. Do **not** use deploy/delete
+or other write operations as the acceptance test.
 
-## Secret setup (interactive)
-
-Create a token in the Vercel UI:
-
-1. Open [Account Tokens](https://vercel.com/account/tokens) (Account → Settings → Tokens).
-2. Name it clearly (e.g. `pade-milestone-l-diagnostics`).
-3. Prefer the narrowest scope Vercel currently offers that still allows diagnostics:
-   **Project** scope for the target project (Vercel also offers Team and Full Account).
-4. Choose a **finite / short practical expiration** (not indefinite).
-5. Copy the token once at creation (it is not shown again).
-
-Important vendor caveats:
-
-- Project scope limits blast radius to one project, but Vercel does **not**
-  currently offer a read-only token class in the access-token UI/docs. A
-  project-scoped token can still mutate that project.
-- If you must use Team or Full Account scope, treat the credential as highly
-  sensitive and keep expiration short.
-
-Populate Secret Manager **without** putting the token in shell history or chat:
+## Secret setup
 
 ```bash
-read -rsp "Vercel token: " VERCEL_TOKEN
-echo
-export VERCEL_TOKEN
+read -rsp "Vercel token: " VERCEL_TOKEN && echo && export VERCEL_TOKEN
 make secret-vercel-token
 unset VERCEL_TOKEN
 ```
@@ -120,58 +118,39 @@ unset VERCEL_TOKEN
 Metadata-only verification (never print the secret value):
 
 ```bash
-# Secret exists
 gcloud secrets describe vercel-token --project="$PROJECT_ID"
-
-# Has an enabled version (no value shown)
 gcloud secrets versions list vercel-token --project="$PROJECT_ID" --filter='state=ENABLED' --limit=1
-
-# Runtime SA can access
-gcloud secrets get-iam-policy vercel-token --project="$PROJECT_ID" \
-  --flatten='bindings[].members' \
-  --filter="bindings.role:roles/secretmanager.secretAccessor AND bindings.members:serviceAccount:pade-broker-runtime@"
 ```
 
 Do **not** use `gcloud secrets versions access` as a validation step.
 
-## Deploy and validate
+## Deploy (static-token-file)
 
-```bash
-make render-config
-make build
-make push
-make deploy
-make validate-remote   # health + unauthenticated resolve → 401
-make print-agent-bindings
-```
+1. In bindings, use static-token-file config (see comments in
+   [`config/broker-bindings.yaml.tmpl`](../config/broker-bindings.yaml.tmpl)).
+2. `MOUNT_SHARED_VERCEL_TOKEN=1 make deploy`
+3. `make validate-remote`
+4. From a Cursor Cloud Agent: resolve `vercel.diagnostics` and run ordinary CLI diagnostics.
 
-Then from a Cursor Cloud Agent with the released PADE Consumer and ordinary
-Vercel CLI installed, run a read-oriented diagnostic under `pade exec` as above.
-A fresh DevelopmentSession must **not** contain a manually copied Vercel credential.
-
-## Security model (Milestone L)
+## Security model (shared token)
 
 | Layer | What it does |
 |-------|----------------|
 | Broker OIDC policy | Who may request `vercel.diagnostics` |
-| Exec provider | Turns mounted file into Material.env |
+| Exec provider | Turns mounted file into Material env |
 | Consumer `pade exec` | Injects Material into a scoped child process |
 | Vercel token scope | What the CLI/API can actually do |
 
 PADE does **not** mediate individual Vercel operations after Material delivery.
-The agent receives the token for the lifetime of that child execution.
+All allowlisted subjects share the same organizational token on this path.
 
 ## What this is / is not
 
 | This is | This is not |
 |---------|-------------|
-| Milestone L external CLI dogfood | Completed Milestone M live A/B E2E |
+| Completed Milestone L external CLI dogfood | The recommended subject-isolated production default |
 | Deployment-specific wiring | First-class PADE Vercel support |
-| Static Material from Secret Manager | Per-user Vercel credentials / `userSecrets` |
+| Static Material from a shared Secret Manager mount | Per-subject Vercel credentials |
 | Ordinary Vercel CLI in the consumer | Vercel CLI or MCP inside the broker image |
 
-Subject-specific Vercel credentials, Google WIF, and Secret Manager IAM keyed by
-subject are scaffolded under Milestone M — see [`milestone-m-wif.md`](milestone-m-wif.md).
-Keep this Milestone L path as the default shared-authority deploy until you
-intentionally flip bindings to `subject-secret-wif` (requires broker **v0.1.1+**
-identity forwarding).
+For subject-bound authority, use [`milestone-m-wif.md`](milestone-m-wif.md).

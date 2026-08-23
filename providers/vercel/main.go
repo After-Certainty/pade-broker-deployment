@@ -1,9 +1,10 @@
 // Command pade-provider-vercel is a deployment-owned PADE exec provider.
 //
-// Milestone L: static Secret Manager–mounted Vercel token → Material (default).
-// Milestone M: optional subject-secret-wif fulfillment exchanges broker-forwarded
-// Cursor identity for federated Google credentials and reads a subject-bound
-// secret. Not part of PADE core; not a Vercel SDK or CLI.
+// Deployed bindings use subject-secret-wif: exchange broker-forwarded Cursor
+// identity for federated Google credentials and read a subject-bound secret.
+// Omitting fulfillment falls back to static-token-file (shared mounted token)
+// for compatibility only — not the recommended deployment default.
+// Not part of PADE core; not a Vercel SDK or CLI.
 //
 // Contract: PADE v0.1.1 docs/provider-contract.md (broker-side exec + identity).
 package main

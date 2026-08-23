@@ -25,7 +25,7 @@ RUN go mod download \
     && CGO_ENABLED=0 go build -o /out/pade-provider-github ./examples/providers/github \
     && CGO_ENABLED=0 go build -o /out/pade-provider-google-analytics ./examples/providers/google-analytics
 
-# Deployment-owned Milestone L provider (not in PADE core).
+# Deployment-owned Vercel provider (not in PADE core; subject-secret-wif + static-token-file).
 COPY providers/vercel /src-vercel
 WORKDIR /src-vercel
 RUN CGO_ENABLED=0 go build -o /out/pade-provider-vercel .
