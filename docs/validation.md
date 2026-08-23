@@ -10,7 +10,7 @@ Use metadata and successful downstream operations as evidence.
 ## Stage 1 — container
 
 Covered by [pade](https://github.com/After-Certainty/pade) CI and the released
-`ghcr.io/after-certainty/pade-broker:v0.1.1` image. Optional: `make pull-broker`.
+`ghcr.io/after-certainty/pade-broker:v0.2.0` image. Optional: `make pull-broker`.
 
 Local overlay checks (this repo):
 
