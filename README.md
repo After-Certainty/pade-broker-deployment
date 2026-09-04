@@ -10,7 +10,7 @@ The broker binary comes from the **released GHCR image**. This repo only:
 3. Deploys the overlay to Cloud Run with those secrets mounted as files
 
 Protocol / identity docs: [cursor-oidc-broker-dogfood.md](https://github.com/After-Certainty/pade/blob/main/docs/cursor-oidc-broker-dogfood.md)
-Release: [pade v0.2.0](https://github.com/After-Certainty/pade/releases/tag/v0.2.0)
+Release: [pade v0.2.1](https://github.com/After-Certainty/pade/releases/tag/v0.2.1)
 Roadmap (Milestones L–O): [ROADMAP.md](https://github.com/After-Certainty/pade/blob/main/ROADMAP.md)
 
 ## Responsibility split
@@ -26,7 +26,7 @@ A new reader should **not** conclude that PADE itself contains a Vercel provider
 ## Architecture
 
 ```text
-ghcr.io/after-certainty/pade-broker:v0.2.0  (released; digest-pinned in versions.env)
+ghcr.io/after-certainty/pade-broker:v0.2.1  (released; digest-pinned in versions.env)
         +
 runtime overlay  (exec providers + rendered policy/bindings → your Artifact Registry)
         +
@@ -129,9 +129,9 @@ Recorded in [`versions.env`](versions.env). Override in `.env` only if you deplo
 
 | Artifact | Value |
 |----------|--------|
-| Broker (upstream) | `ghcr.io/after-certainty/pade-broker:v0.2.0` |
-| Broker digest | `sha256:cebe77f3a413d7d0377ed4aa0ff8ec49c78df3d6ddced16ae2a7b6a4e65e41d4` |
-| Source commit | `65e58f3ffb71e2ef0bcbc0aade2e8e678346b4f4` |
+| Broker (upstream) | `ghcr.io/after-certainty/pade-broker:v0.2.1` |
+| Broker digest | `sha256:3a17bcd0867e7666870d5e54e42b3cf6a39444d0c5227768fbe3baff0ae353af` |
+| Source commit | `d50174a2696743db3879dc98615801f5ad8d462a` |
 | Runtime overlay tag | `pade-broker-runtime:${PADE_VERSION}` locally; CI uses full deployment-repo git SHA |
 
 This repo does **not** build `pade-broker` from source. `make build` pulls the released GHCR image and layers exec providers + rendered config on top.
@@ -230,8 +230,8 @@ For the optional shared-token path instead, see [docs/milestone-l-vercel.md](doc
 
 | Component | Source |
 |-----------|--------|
-| `pade-broker` binary | **Pull** `ghcr.io/after-certainty/pade-broker@sha256:6c03d754…` |
-| GitHub + GA exec providers | **Build** from PADE `v0.2.0` tag during `docker build` |
+| `pade-broker` binary | **Pull** `ghcr.io/after-certainty/pade-broker@sha256:3a17bcd0867e7666870d5e54e42b3cf6a39444d0c5227768fbe3baff0ae353af` |
+| GitHub + GA exec providers | **Build** from PADE `v0.2.1` tag during `docker build` |
 | Vercel exec provider | **Build** from `providers/vercel` in this repo (deployment-owned) |
 | Policy / bindings | **Render** from `config/broker-*.yaml.tmpl` + `.env`, then copy into the overlay |
 | App PEM / SA JSON | **Mount** from Secret Manager at deploy |

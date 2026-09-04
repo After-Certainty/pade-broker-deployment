@@ -6,7 +6,7 @@
 // for compatibility only — not the recommended deployment default.
 // Not part of PADE core; not a Vercel SDK or CLI.
 //
-// Contract: PADE v0.2.0 docs/provider-contract.md (broker-side exec + identity).
+// Contract: PADE v0.2.1 docs/provider-contract.md (broker-side exec + identity).
 package main
 
 import (
