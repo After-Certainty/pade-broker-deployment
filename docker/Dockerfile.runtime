@@ -1,7 +1,7 @@
 # Runtime overlay on the released GHCR pade-broker image.
 #
 #   - ghcr.io/after-certainty/pade-broker (digest-pinned via BASE_IMAGE build-arg)
-#   - PADE reference exec providers (built from PADE v0.2.0 source at image build time)
+#   - PADE reference exec providers (built from PADE v0.2.1 source at image build time)
 #   - deployment-owned Vercel exec provider (built from providers/vercel in this repo)
 #   - rendered policy/bindings from config/.generated (no durable credentials)
 #
@@ -10,7 +10,7 @@
 
 ARG BASE_IMAGE
 ARG PADE_REPO=https://github.com/After-Certainty/pade.git
-ARG PADE_VERSION=v0.2.0
+ARG PADE_VERSION=v0.2.1
 
 # Build static provider binaries from the released PADE tag (not a local cache checkout).
 FROM golang:1.26-bookworm AS providers
