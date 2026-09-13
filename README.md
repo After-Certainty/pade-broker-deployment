@@ -137,8 +137,8 @@ Recorded in [`versions.env`](versions.env). Override in `.env` only if you deplo
 | Artifact | Value |
 |----------|--------|
 | Broker (upstream) | `ghcr.io/after-certainty/pade-broker:v0.3.0` |
-| Broker digest | `sha256:3a17bcd0867e7666870d5e54e42b3cf6a39444d0c5227768fbe3baff0ae353af` |
-| Source commit | `d50174a2696743db3879dc98615801f5ad8d462a` |
+| Broker digest | `sha256:fb52aadb8a0cdddf6b8b455ed1b7616afaacd887690fbbd57aec2218d90c834d` |
+| Source commit | `0467ed22034a7ae6a2e636a63a277bbd25d23263` |
 | Runtime overlay tag | `pade-broker-runtime:${PADE_VERSION}` locally; CI uses full deployment-repo git SHA |
 
 This repo does **not** build `pade-broker` from source. `make build` pulls the released GHCR image and layers exec providers + rendered config on top.
@@ -240,7 +240,7 @@ For the optional shared-token path instead, see [docs/milestone-l-vercel.md](doc
 
 | Component | Source |
 |-----------|--------|
-| `pade-broker` binary | **Pull** `ghcr.io/after-certainty/pade-broker@sha256:3a17bcd0867e7666870d5e54e42b3cf6a39444d0c5227768fbe3baff0ae353af` |
+| `pade-broker` binary | **Pull** `ghcr.io/after-certainty/pade-broker@sha256:fb52aadb8a0cdddf6b8b455ed1b7616afaacd887690fbbd57aec2218d90c834d` |
 | GitHub + GA exec providers | **Build** from PADE `v0.3.0` tag during `docker build` |
 | Vercel exec provider | **Build** from `providers/vercel` in this repo (deployment-owned) |
 | Policy / bindings | **Render** from `config/broker-*.yaml.tmpl` + `.env`, then copy into the overlay |
