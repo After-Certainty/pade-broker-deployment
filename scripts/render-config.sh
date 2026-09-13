@@ -48,6 +48,11 @@ elif ! is_placeholder "${CURSOR_OIDC_SUBJECT:-}"; then
   SUBJECTS+=("${CURSOR_OIDC_SUBJECT}")
 fi
 
+GCE_SUBJECT=""
+if ! is_placeholder "${GCE_OIDC_SUBJECT:-}"; then
+  GCE_SUBJECT="$(trim "${GCE_OIDC_SUBJECT}")"
+fi
+
 missing=()
 for v in GITHUB_APP_ID GITHUB_APP_INSTALLATION_ID GITHUB_REPOSITORIES GA_PROPERTY_ID; do
   if is_placeholder "${!v:-}"; then
@@ -57,13 +62,17 @@ done
 if ((${#SUBJECTS[@]} == 0)); then
   missing+=("CURSOR_OIDC_SUBJECT or CURSOR_OIDC_SUBJECTS")
 fi
+if [[ -z "${GCE_SUBJECT}" ]]; then
+  missing+=("GCE_OIDC_SUBJECT")
+fi
 
 if ((${#missing[@]} > 0)); then
   echo "error: set the following in .env (see .env.example):" >&2
   for v in "${missing[@]}"; do
     echo "  ${v}" >&2
   done
-  echo "hint: subjects come from: pade identity --audience ${BROKER_URL}" >&2
+  echo "hint: Cursor subjects come from: pade identity --audience ${BROKER_URL}" >&2
+  echo "hint: GCE_OIDC_SUBJECT is the Google OIDC sub for the GCE-attached service account" >&2
   exit 1
 fi
 
@@ -80,17 +89,23 @@ if [[ -z "${GITHUB_REPOSITORIES_YAML}" ]]; then
 fi
 GITHUB_REPOSITORIES_YAML="${GITHUB_REPOSITORIES_YAML%$'\n'}"
 
-# One policy entry per subject; same capability set (Milestone M A/B dogfood).
-CURSOR_OIDC_POLICIES_YAML=""
+# Combined multi-issuer policies: Cursor rules (full caps) + least-priv GCE rule.
+OIDC_POLICIES_YAML=""
 for subject in "${SUBJECTS[@]}"; do
-  CURSOR_OIDC_POLICIES_YAML+="  - subject: \"${subject}\""$'\n'
-  CURSOR_OIDC_POLICIES_YAML+="    requireRepoURLs: false"$'\n'
-  CURSOR_OIDC_POLICIES_YAML+="    capabilities:"$'\n'
-  CURSOR_OIDC_POLICIES_YAML+="      - github.repo.read"$'\n'
-  CURSOR_OIDC_POLICIES_YAML+="      - google-analytics.read"$'\n'
-  CURSOR_OIDC_POLICIES_YAML+="      - vercel.diagnostics"$'\n'
+  OIDC_POLICIES_YAML+="  - issuer: cursor"$'\n'
+  OIDC_POLICIES_YAML+="    subject: \"${subject}\""$'\n'
+  OIDC_POLICIES_YAML+="    requireRepoURLs: false"$'\n'
+  OIDC_POLICIES_YAML+="    capabilities:"$'\n'
+  OIDC_POLICIES_YAML+="      - github.repo.read"$'\n'
+  OIDC_POLICIES_YAML+="      - google-analytics.read"$'\n'
+  OIDC_POLICIES_YAML+="      - vercel.diagnostics"$'\n'
 done
-CURSOR_OIDC_POLICIES_YAML="${CURSOR_OIDC_POLICIES_YAML%$'\n'}"
+OIDC_POLICIES_YAML+="  - issuer: google"$'\n'
+OIDC_POLICIES_YAML+="    subject: \"${GCE_SUBJECT}\""$'\n'
+OIDC_POLICIES_YAML+="    requireRepoURLs: false"$'\n'
+OIDC_POLICIES_YAML+="    capabilities:"$'\n'
+OIDC_POLICIES_YAML+="      - github.repo.read"
+# No trailing newline trim — last line has no trailing \n by construction.
 
 OUT_DIR="${ROOT}/config/.generated"
 mkdir -p "${OUT_DIR}"
@@ -101,7 +116,7 @@ render_template() {
   local content
   content="$(<"${tmpl}")"
   content="${content//\$\{BROKER_URL\}/${BROKER_URL}}"
-  content="${content//\$\{CURSOR_OIDC_POLICIES_YAML\}/${CURSOR_OIDC_POLICIES_YAML}}"
+  content="${content//\$\{OIDC_POLICIES_YAML\}/${OIDC_POLICIES_YAML}}"
   content="${content//\$\{GITHUB_APP_ID\}/${GITHUB_APP_ID}}"
   content="${content//\$\{GITHUB_APP_INSTALLATION_ID\}/${GITHUB_APP_INSTALLATION_ID}}"
   content="${content//\$\{GA_PROPERTY_ID\}/${GA_PROPERTY_ID}}"
@@ -123,4 +138,5 @@ render_template "${ROOT}/config/broker-bindings.yaml.tmpl" "$(bindings_file)"
 echo "==> Rendered $(policy_file_rel)"
 echo "==> Rendered $(bindings_file_rel)"
 echo "    audience=${BROKER_URL}"
-echo "    subjects=${SUBJECTS[*]}"
+echo "    cursor_subjects=${SUBJECTS[*]}"
+echo "    gce_subject=${GCE_SUBJECT}"

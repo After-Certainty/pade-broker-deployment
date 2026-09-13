@@ -10,14 +10,14 @@ The broker binary comes from the **released GHCR image**. This repo only:
 3. Deploys the overlay to Cloud Run with those secrets mounted as files
 
 Protocol / identity docs: [cursor-oidc-broker-dogfood.md](https://github.com/After-Certainty/pade/blob/main/docs/cursor-oidc-broker-dogfood.md)
-Release: [pade v0.2.1](https://github.com/After-Certainty/pade/releases/tag/v0.2.1)
+Release: [pade v0.3.0](https://github.com/After-Certainty/pade/releases/tag/v0.3.0)
 Roadmap (Milestones L–O): [ROADMAP.md](https://github.com/After-Certainty/pade/blob/main/ROADMAP.md)
 
 ## Responsibility split
 
 | Layer | Owns | Does not own |
 |-------|------|----------------|
-| **PADE core** | Portable capability intent, Broker/Consumer contracts, generic Material, broker-verified identity context for trusted broker-side exec providers (v0.1.1) | Vercel (or other vendor) providers, schemas, SDKs, CLIs, or user→secret tables |
+| **PADE core** | Portable capability intent, Broker/Consumer contracts, generic Material, broker-verified identity context for trusted broker-side exec providers (v0.1.1+) | Vercel (or other vendor) providers, schemas, SDKs, CLIs, or user→secret tables |
 | **This deployment repo** | Concrete policy/bindings, deployment-owned exec providers, Cloud Run + Secret Manager layout, GitHub deploy WIF, Cursor runtime WIF, IAM, Vercel fulfillment | PADE protocol changes; durable credentials on the agent VM |
 | **Consumer / Cloud Agent** | Ordinary vendor tools (e.g. Vercel CLI) under released PADE tooling (`pade exec`); receives Material only for scoped children | Durable App keys, SA JSON, or Vercel tokens on the VM |
 
@@ -26,14 +26,21 @@ A new reader should **not** conclude that PADE itself contains a Vercel provider
 ## Architecture
 
 ```text
-ghcr.io/after-certainty/pade-broker:v0.2.1  (released; digest-pinned in versions.env)
+ghcr.io/after-certainty/pade-broker:v0.3.0  (released; digest-pinned in versions.env)
         +
 runtime overlay  (exec providers + rendered policy/bindings → your Artifact Registry)
         +
 Google Cloud Run  (proxy TLS termination, Secret Manager file mounts)
         +
-Cursor Cloud Agent  (provider: broker, short-lived OIDC JWT)
+Cursor Cloud Agent  (Cursor OIDC; omit broker.identity → Cursor default)
+        +
+GCE Coder workspace  (Google OIDC via metadata; broker.identity: gce)
 ```
+
+One broker URL; multi-issuer trust (`cursor` + `google`). Authorization is issuer
+alias + subject. GCE is allowlisted for `github.repo.read` only. Vercel Material
+remains Cursor→GCP WIF and must not be assumed for GCE identity. Coder is not an
+IdP — Google identity comes from the GCE metadata server.
 
 ### Recommended Vercel path (`fulfillment: subject-secret-wif`)
 
@@ -129,9 +136,9 @@ Recorded in [`versions.env`](versions.env). Override in `.env` only if you deplo
 
 | Artifact | Value |
 |----------|--------|
-| Broker (upstream) | `ghcr.io/after-certainty/pade-broker:v0.2.1` |
-| Broker digest | `sha256:3a17bcd0867e7666870d5e54e42b3cf6a39444d0c5227768fbe3baff0ae353af` |
-| Source commit | `d50174a2696743db3879dc98615801f5ad8d462a` |
+| Broker (upstream) | `ghcr.io/after-certainty/pade-broker:v0.3.0` |
+| Broker digest | `sha256:fb52aadb8a0cdddf6b8b455ed1b7616afaacd887690fbbd57aec2218d90c834d` |
+| Source commit | `0467ed22034a7ae6a2e636a63a277bbd25d23263` |
 | Runtime overlay tag | `pade-broker-runtime:${PADE_VERSION}` locally; CI uses full deployment-repo git SHA |
 
 This repo does **not** build `pade-broker` from source. `make build` pulls the released GHCR image and layers exec providers + rendered config on top.
@@ -165,6 +172,7 @@ cp .env.example .env
 | `GA_PROPERTY_ID` | yes | GA4 property resource name, e.g. `properties/123456789` |
 | `CURSOR_OIDC_SUBJECT` | yes* | From a Cursor Cloud Agent: `pade identity --audience "$(make -s predict-url)"` |
 | `CURSOR_OIDC_SUBJECTS` | no | Comma-separated subjects for A/B isolation dogfood (overrides single subject) |
+| `GCE_OIDC_SUBJECT` | yes | Google OIDC `sub` for the GCE-attached SA (broker authz; non-secret) |
 | `BROKER_URL` | no | Defaults to the predicted Cloud Run URL |
 | `REGION`, `SERVICE`, image pins | no | Override [`versions.env`](versions.env) defaults |
 
@@ -195,7 +203,8 @@ make push
 make deploy   # omits shared vercel-token mount by default
 
 make validate-remote
-make print-agent-bindings   # copy into the Cursor Cloud Agent
+make print-agent-bindings       # Cursor (omit identity)
+make print-agent-bindings-gce   # GCE (identity: gce)
 ```
 
 For the optional shared-token path instead, see [docs/milestone-l-vercel.md](docs/milestone-l-vercel.md) (`make secret-vercel-token` + `MOUNT_SHARED_VERCEL_TOKEN=1` + static-token-file binding).
@@ -209,7 +218,8 @@ For the optional shared-token path instead, see [docs/milestone-l-vercel.md](doc
 | `make bootstrap-cursor-wif` | Cursor OIDC → GCP WIF pool (runtime subject-bound authority) |
 | `make predict-url` | Print deterministic Cloud Run HTTPS URL |
 | `make render-config` | Render policy/bindings from templates + `.env` |
-| `make print-agent-bindings` | Print agent YAML pointed at the predicted URL |
+| `make print-agent-bindings` | Print Cursor agent YAML pointed at the predicted URL |
+| `make print-agent-bindings-gce` | Print GCE agent YAML (`identity: gce`) at the predicted URL |
 | `make pull-broker` | Pull released `ghcr.io/after-certainty/pade-broker` |
 | `make build` | Render config; build runtime overlay on the digest-pinned broker |
 | `make push` | Push runtime overlay to Artifact Registry |
@@ -230,8 +240,8 @@ For the optional shared-token path instead, see [docs/milestone-l-vercel.md](doc
 
 | Component | Source |
 |-----------|--------|
-| `pade-broker` binary | **Pull** `ghcr.io/after-certainty/pade-broker@sha256:3a17bcd0867e7666870d5e54e42b3cf6a39444d0c5227768fbe3baff0ae353af` |
-| GitHub + GA exec providers | **Build** from PADE `v0.2.1` tag during `docker build` |
+| `pade-broker` binary | **Pull** `ghcr.io/after-certainty/pade-broker@sha256:fb52aadb8a0cdddf6b8b455ed1b7616afaacd887690fbbd57aec2218d90c834d` |
+| GitHub + GA exec providers | **Build** from PADE `v0.3.0` tag during `docker build` |
 | Vercel exec provider | **Build** from `providers/vercel` in this repo (deployment-owned) |
 | Policy / bindings | **Render** from `config/broker-*.yaml.tmpl` + `.env`, then copy into the overlay |
 | App PEM / SA JSON | **Mount** from Secret Manager at deploy |
@@ -255,7 +265,7 @@ For the optional shared-token path instead, see [docs/milestone-l-vercel.md](doc
 | `google-analytics.read` | `pade-provider-google-analytics` (from PADE) | `GA_ACCESS_TOKEN`, `GA_PROPERTY_ID` | Reference provider |
 | `vercel.diagnostics` | `pade-provider-vercel` (this repo) | `VERCEL_TOKEN` Material | Opaque id; default fulfillment `subject-secret-wif` |
 
-Agent-side example: [`agent/broker.bindings.example.yaml`](agent/broker.bindings.example.yaml) or `make print-agent-bindings`.
+Agent-side examples: [`agent/broker.bindings.example.yaml`](agent/broker.bindings.example.yaml) (Cursor) or [`agent/broker.bindings.gce.example.yaml`](agent/broker.bindings.gce.example.yaml) (GCE); `make print-agent-bindings` / `make print-agent-bindings-gce`.
 
 `vercel.diagnostics` does **not** restrict which Vercel operations the token can perform after Material delivery. Downstream Vercel authorization remains authoritative. Prefer the narrowest Vercel scope and expiration Vercel offers; subject-bound WIF improves isolation but does **not** make a broad token read-only.
 

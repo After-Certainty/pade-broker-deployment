@@ -1,0 +1,22 @@
+# Agent-side bindings for a GCE workload (e.g. Coder workspace on Compute Engine).
+# Uses Google OIDC from the GCE metadata server via broker.identity: gce (PADE v0.3.0+).
+#
+# Coder is not an identity provider. The broker trusts Google/GCE identity and
+# authorizes issuer alias `google` + the allowlisted GCE_OIDC_SUBJECT.
+#
+# Point endpoint + audience at your Cloud Run broker URL (same audience as Cursor).
+# The VM must NOT hold App keys or other durable credentials.
+#
+# Initial least privilege: github.repo.read only. Do not assume vercel.diagnostics
+# or google-analytics.read work for GCE identity (Vercel fulfillment is Cursor WIF).
+#
+# Copy and replace YOUR-BROKER-URL, or run: make print-agent-bindings-gce
+version: "0.1"
+
+capabilities:
+  github.repo.read:
+    provider: broker
+    broker:
+      endpoint: https://YOUR-BROKER-URL
+      audience: https://YOUR-BROKER-URL
+      identity: gce
