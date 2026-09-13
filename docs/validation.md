@@ -1,7 +1,8 @@
 # Validation checklist for a Cloud Run PADE broker
 
 Public PADE owns Stage 1 (container CI). This deployment repo owns Stages 2–3 as
-Make targets. Stages 4+ run from a Cursor Cloud Agent after you deploy.
+Make targets. Stages 4+ run from a real workload after you deploy: a Cursor Cloud
+Agent **or** a GCE Coder workspace (Google metadata identity).
 
 Use this as a forker’s checklist, not a record of any one deployment.
 **Do not print secret values** (OIDC JWTs, Vercel tokens, PEMs, SA JSON) at any stage.
@@ -10,7 +11,7 @@ Use metadata and successful downstream operations as evidence.
 ## Stage 1 — container
 
 Covered by [pade](https://github.com/After-Certainty/pade) CI and the released
-`ghcr.io/after-certainty/pade-broker:v0.2.1` image. Optional: `make pull-broker`.
+`ghcr.io/after-certainty/pade-broker:v0.3.0` image. Optional: `make pull-broker`.
 
 Local overlay checks (this repo):
 
@@ -61,22 +62,95 @@ make validate-remote   # stages 2 + 3
 
 ## Stage 4 — real Cursor identity
 
-From a Cursor Cloud Agent (identity socket present):
+From a Cursor Cloud Agent (identity socket present). Omitting `broker.identity`
+remains valid: PADE v0.3.0 still defaults blank identity to Cursor.
 
 ```bash
 pade identity --audience "$BROKER_URL"
 
 # Agent bindings: make print-agent-bindings
-# endpoint + audience must equal $BROKER_URL and policy oidc.audience
+# endpoint + audience must equal $BROKER_URL and each issuer's audience
 ```
 
 Expect safe claims only (no raw JWT printed). Then call resolve (via `pade exec`
 or HTTP) and confirm allow/deny matches the rendered policy subject
-(`CURSOR_OIDC_SUBJECT` / `CURSOR_OIDC_SUBJECTS` in `.env`). Inspect broker logs
-(`make logs`) for decisions — not tokens.
+(`CURSOR_OIDC_SUBJECT` / `CURSOR_OIDC_SUBJECTS` in `.env`) under issuer alias
+`cursor`. Inspect broker logs (`make logs`) for decisions — not tokens.
 
 - [ ] `pade identity --audience <BROKER_URL>` returns a subject matching `.env`
 - [ ] A resolve for that subject is allowed; a different subject is denied
+
+## Stage 4b — real GCE identity (deployed broker)
+
+From the existing `pade-gcp` Coder/GCE workspace (not from GitHub Actions —
+runners are not GCE workspace identity).
+
+Use PADE v0.3.0 agent bindings with Google metadata identity:
+
+```yaml
+provider: broker
+broker:
+  endpoint: <real Cloud Run broker URL>
+  audience: <same URL>
+  identity: gce
+```
+
+Request capability `github.repo.read` only (current GCE allowlist). Then run a
+child that checks Material without printing it:
+
+```bash
+# After pade exec injects Material for the child:
+test -n "${GITHUB_TOKEN:-}" && printf 'deployed-gce-broker: success\n'
+```
+
+Or print bindings pointed at the predicted/deployed URL:
+
+```bash
+make print-agent-bindings-gce
+```
+
+This proves:
+
+```text
+real GCE metadata JWT
+  → deployed Cloud Run broker
+  → google issuer selected
+  → issuer+subject policy
+  → github.repo.read
+  → broker-derived Material reaches child
+```
+
+Do **not** automate this from GitHub Actions. Do **not** print token contents.
+
+- [ ] GCE resolve for `github.repo.read` succeeds for the allowlisted `GCE_OIDC_SUBJECT`
+- [ ] Child sees non-empty `GITHUB_TOKEN` without printing it
+- [ ] `vercel.diagnostics` / `google-analytics.read` are **not** assumed for GCE
+      (Vercel fulfillment remains Cursor→GCP WIF)
+
+### Architecture (one broker, two issuers)
+
+```text
+Cursor Cloud Agent
+   ↓ Cursor OIDC
+   │
+   ├──────────────┐
+                  ↓
+             one broker
+                  ↑
+   ├──────────────┘
+   │
+GCE Coder workspace
+   ↓ Google OIDC (GCE metadata)
+```
+
+Notes:
+
+- Coder is **not** an identity provider; Google/GCE identity comes from the
+  Compute Engine metadata server.
+- Broker authorization is **issuer alias + subject**. Adding a trusted issuer
+  does not itself grant capabilities.
+- GCE currently receives only `github.repo.read` (least privilege). Cursor keeps
+  `github.repo.read`, `google-analytics.read`, and `vercel.diagnostics`.
 
 ## Stage 5 — Material resolution (GitHub + GA + Vercel subject-secret-wif)
 

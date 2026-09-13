@@ -93,10 +93,15 @@ Set on Environment **`production`** (non-secret identifiers):
 | `GA_PROPERTY_ID` | `properties/…` |
 | `CURSOR_OIDC_SUBJECT` | Single Cursor OIDC subject allowlisted in broker policy (one-subject deploys) |
 | `CURSOR_OIDC_SUBJECTS` | Comma-separated Cursor OIDC subject allowlist (preferred when non-empty) |
+| `GCE_OIDC_SUBJECT` | Google OIDC `sub` for the GCE-attached service account (broker authorization; non-secret) |
 
 Set **at least one** of `CURSOR_OIDC_SUBJECT` or `CURSOR_OIDC_SUBJECTS`. If both are
 configured, `CURSOR_OIDC_SUBJECTS` wins — the same precedence as local `.env` and
 `make render-config` (see [`scripts/render-config.sh`](../scripts/render-config.sh)).
+
+`GCE_OIDC_SUBJECT` is **required**. It is broker authorization configuration
+(issuer alias `google` + subject allowlist), **not** part of the GitHub Actions →
+GCP deployer WIF path established by `make bootstrap-github-wif`.
 
 Optional overrides (only if you diverge from [`versions.env`](../versions.env)):
 set matching names in the Environment and extend the workflow `.env` writer.

@@ -7,7 +7,7 @@ SHELL := /bin/bash
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 SCRIPTS := $(ROOT)/scripts
 
-.PHONY: help bootstrap-gcp bootstrap-github-wif bootstrap-cursor-wif predict-url render-config print-agent-bindings \
+.PHONY: help bootstrap-gcp bootstrap-github-wif bootstrap-cursor-wif predict-url render-config print-agent-bindings print-agent-bindings-gce \
 	pull-broker build push secret-github-app secret-ga-sa secret-vercel-token secret-vercel-token-subject \
 	deploy health authz-smoke logs teardown-docs describe-url validate-remote \
 	test-providers test-config-contract
@@ -19,7 +19,8 @@ help:
 	@echo "  bootstrap-cursor-wif         Cursor OIDC → GCP WIF pool (runtime subject-bound auth)"
 	@echo "  predict-url                  Print deterministic Cloud Run HTTPS URL"
 	@echo "  render-config                Render policy/bindings from templates + .env"
-	@echo "  print-agent-bindings         Print agent YAML pointed at the predicted URL"
+	@echo "  print-agent-bindings         Print Cursor agent YAML pointed at the predicted URL"
+	@echo "  print-agent-bindings-gce     Print GCE agent YAML (identity: gce) at the predicted URL"
 	@echo "  pull-broker                  Pull released ghcr.io/after-certainty/pade-broker"
 	@echo "  build                        Render config; build runtime overlay"
 	@echo "  push                         Push runtime overlay to Artifact Registry"
@@ -54,6 +55,9 @@ render-config:
 
 print-agent-bindings:
 	@$(SCRIPTS)/print-agent-bindings.sh
+
+print-agent-bindings-gce:
+	@$(SCRIPTS)/print-agent-bindings-gce.sh
 
 pull-broker:
 	@source "$(SCRIPTS)/lib.sh" && require_cmd docker && load_versions && \
@@ -127,4 +131,4 @@ teardown-docs:
 	@$(SCRIPTS)/print-teardown.sh
 
 validate-remote: health authz-smoke
-	@echo "Stages 2–3 passed. Stages 4–6 require a Cursor Cloud Agent (see docs/validation.md)."
+	@echo "Stages 2–3 passed. Stages 4+ can use a Cursor Cloud Agent or a GCE Coder workspace (see docs/validation.md)."

@@ -34,6 +34,7 @@ jobs:
       GA_PROPERTY_ID: ${{ vars.GA_PROPERTY_ID }}
       CURSOR_OIDC_SUBJECT: ${{ vars.CURSOR_OIDC_SUBJECT }}
       CURSOR_OIDC_SUBJECTS: ${{ vars.CURSOR_OIDC_SUBJECTS }}
+      GCE_OIDC_SUBJECT: ${{ vars.GCE_OIDC_SUBJECT }}
     steps:
       - name: Checkout
         # actions/checkout@v7.0.1

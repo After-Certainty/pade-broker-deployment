@@ -161,8 +161,13 @@ Configure GitHub Environment "production" variables:
   GCP_PROJECT_NUMBER=${PROJECT_NUMBER}
   GCP_WORKLOAD_IDENTITY_PROVIDER=${PROVIDER_RESOURCE}
   GCP_DEPLOYER_SERVICE_ACCOUNT=${DEPLOYER_SA_EMAIL}
-  (+ GH_APP_ID, GH_APP_INSTALLATION_ID, GH_REPOSITORIES,
-     GA_PROPERTY_ID, CURSOR_OIDC_SUBJECT or CURSOR_OIDC_SUBJECTS — see docs/github-actions.md)
+  (+ GH_APP_ID, GH_APP_INSTALLATION_ID, GH_REPOSITORIES, GA_PROPERTY_ID,
+     CURSOR_OIDC_SUBJECT or CURSOR_OIDC_SUBJECTS, GCE_OIDC_SUBJECT —
+     see docs/github-actions.md)
+
+  Note: CURSOR_OIDC_SUBJECT(S) and GCE_OIDC_SUBJECT are broker authorization
+  allowlists (issuer + subject policy). They are not part of this GitHub Actions
+  → GCP deployer WIF path.
 
 Trust model:
   Provider accepts only repository_id=${GITHUB_REPOSITORY_ID},

@@ -50,6 +50,7 @@ jobs:
           GITHUB_REPOSITORIES=ci-fixture/pade-broker-deployment
           GA_PROPERTY_ID=properties/987654321
           CURSOR_OIDC_SUBJECT=user:ci-fixture-subject
+          GCE_OIDC_SUBJECT=123456789012345678901
           EOF
 
       - name: Render config

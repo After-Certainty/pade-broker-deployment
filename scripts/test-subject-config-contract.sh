@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Contract test: GitHub Actions production .env writer ↔ render-config.sh subject semantics.
+# Contract test: GitHub Actions production .env writer ↔ render-config.sh
+# multi-issuer subject semantics (Cursor + GCE).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -32,6 +33,8 @@ cp "${ROOT}/config/broker-bindings.yaml.tmpl" "${WORK}/config/"
 
 chmod +x "${WORK}/scripts/write-production-env.sh" "${WORK}/scripts/render-config.sh"
 
+FIXTURE_GCE_SUBJECT="999000111222333444555"
+
 fixture_env=(
   PROJECT_ID=pade-ci-fixture
   PROJECT_NUMBER=123456789012
@@ -39,19 +42,28 @@ fixture_env=(
   GITHUB_APP_INSTALLATION_ID=200002
   GITHUB_REPOSITORIES=ci-fixture/pade-broker-deployment
   GA_PROPERTY_ID=properties/987654321
+  GCE_OIDC_SUBJECT="${FIXTURE_GCE_SUBJECT}"
 )
 
 policy_path() {
   echo "${WORK}/config/.generated/broker-policy.yaml"
 }
 
-count_policy_subjects() {
-  grep -c '^  - subject:' "$(policy_path)" || true
+count_policy_rules() {
+  grep -cE '^  - issuer: (cursor|google)$' "$(policy_path)" || true
+}
+
+count_cursor_rules() {
+  grep -cE '^  - issuer: cursor$' "$(policy_path)" || true
+}
+
+count_google_rules() {
+  grep -cE '^  - issuer: google$' "$(policy_path)" || true
 }
 
 policy_contains_subject() {
   local subject="$1"
-  grep -Fq "  - subject: \"${subject}\"" "$(policy_path)"
+  grep -Fq "    subject: \"${subject}\"" "$(policy_path)"
 }
 
 policy_lacks_subject() {
@@ -59,18 +71,29 @@ policy_lacks_subject() {
   ! policy_contains_subject "${subject}"
 }
 
-run_writer_and_render() {
-  local extra=("$@")
-  (
-    cd "${WORK}"
-    export "${fixture_env[@]}"
-    local kv
-    for kv in "${extra[@]}"; do
-      export "${kv?}"
-    done
-    ./scripts/write-production-env.sh
-    ./scripts/render-config.sh
-  )
+# Extract the YAML block for one issuer+subject rule (until next rule or EOF).
+rule_block_for() {
+  local issuer="$1"
+  local subject="$2"
+  awk -v issuer="${issuer}" -v subject="${subject}" '
+    /^  - issuer: / {
+      if (collecting && matched) {
+        printf "%s", block
+        found = 1
+        exit
+      }
+      collecting = ($0 == "  - issuer: " issuer)
+      matched = 0
+      block = ""
+    }
+    collecting {
+      block = block $0 "\n"
+      if ($0 == "    subject: \"" subject "\"") matched = 1
+    }
+    END {
+      if (!found && collecting && matched) printf "%s", block
+    }
+  ' "$(policy_path)"
 }
 
 assert_eq() {
@@ -83,19 +106,152 @@ assert_eq() {
   fi
 }
 
-echo "==> case A: singular-only configuration"
+assert_file_contains() {
+  local needle="$1"
+  local msg="$2"
+  if ! grep -Fq "${needle}" "$(policy_path)"; then
+    echo "FAIL: ${msg}" >&2
+    echo "  missing: ${needle}" >&2
+    exit 1
+  fi
+}
+
+assert_file_lacks() {
+  local needle="$1"
+  local msg="$2"
+  if grep -Fq "${needle}" "$(policy_path)"; then
+    echo "FAIL: ${msg}" >&2
+    echo "  unexpectedly found: ${needle}" >&2
+    exit 1
+  fi
+}
+
+assert_multi_issuer_shape() {
+  local policy
+  policy="$(policy_path)"
+
+  assert_file_contains "  issuers:" "policy must declare oidc.issuers"
+  assert_file_contains "    cursor:" "policy must declare cursor issuer alias"
+  assert_file_contains "    google:" "policy must declare google issuer alias"
+  assert_file_contains "      issuer: https://api.cursor.com" "cursor issuer URL"
+  assert_file_contains "      jwksURL: https://api.cursor.com/keys" "cursor JWKS URL"
+  assert_file_contains "      issuer: https://accounts.google.com" "google issuer URL"
+  assert_file_contains "      jwksURL: https://www.googleapis.com/oauth2/v3/certs" "google JWKS URL"
+
+  local issuer_alias_count
+  issuer_alias_count="$(grep -cE '^    (cursor|google):$' "${policy}" || true)"
+  assert_eq "${issuer_alias_count}" "2" "exactly two OIDC issuer aliases"
+
+  # No legacy top-level oidc.issuer / oidc.audience.
+  if grep -E '^  issuer:' "${policy}" >/dev/null; then
+    echo "FAIL: legacy top-level oidc.issuer must not remain" >&2
+    exit 1
+  fi
+  if grep -E '^  audience:' "${policy}" >/dev/null; then
+    echo "FAIL: legacy top-level oidc.audience must not remain" >&2
+    exit 1
+  fi
+
+  local audience_count
+  audience_count="$(grep -cE '^      audience: https://' "${policy}" || true)"
+  assert_eq "${audience_count}" "2" "both issuers must set audience"
+
+  assert_file_lacks "YOUR_" "no placeholder subjects may survive rendering"
+}
+
+assert_cursor_capabilities() {
+  local subject="$1"
+  local block
+  block="$(rule_block_for cursor "${subject}")"
+  [[ -n "${block}" ]] || {
+    echo "FAIL: no cursor rule block for ${subject}" >&2
+    exit 1
+  }
+  echo "${block}" | grep -Fq "issuer: cursor" || {
+    echo "FAIL: cursor rule missing issuer for ${subject}" >&2
+    exit 1
+  }
+  echo "${block}" | grep -Fq "github.repo.read" || {
+    echo "FAIL: cursor rule missing github.repo.read for ${subject}" >&2
+    exit 1
+  }
+  echo "${block}" | grep -Fq "google-analytics.read" || {
+    echo "FAIL: cursor rule missing google-analytics.read for ${subject}" >&2
+    exit 1
+  }
+  echo "${block}" | grep -Fq "vercel.diagnostics" || {
+    echo "FAIL: cursor rule missing vercel.diagnostics for ${subject}" >&2
+    exit 1
+  }
+}
+
+assert_gce_least_privilege() {
+  local block
+  block="$(rule_block_for google "${FIXTURE_GCE_SUBJECT}")"
+  [[ -n "${block}" ]] || {
+    echo "FAIL: no google rule block for GCE subject" >&2
+    exit 1
+  }
+  echo "${block}" | grep -Fq "issuer: google" || {
+    echo "FAIL: GCE rule missing issuer: google" >&2
+    exit 1
+  }
+  echo "${block}" | grep -Fq "github.repo.read" || {
+    echo "FAIL: GCE rule missing github.repo.read" >&2
+    exit 1
+  }
+  if echo "${block}" | grep -Fq "google-analytics.read"; then
+    echo "FAIL: GCE rule must not include google-analytics.read" >&2
+    exit 1
+  fi
+  if echo "${block}" | grep -Fq "vercel.diagnostics"; then
+    echo "FAIL: GCE rule must not include vercel.diagnostics" >&2
+    exit 1
+  fi
+  local cap_count
+  cap_count="$(echo "${block}" | grep -cE '^      - ' || true)"
+  assert_eq "${cap_count}" "1" "GCE rule must have exactly one capability"
+}
+
+run_writer_and_render() {
+  local extra=("$@")
+  (
+    cd "${WORK}"
+    unset CURSOR_OIDC_SUBJECT CURSOR_OIDC_SUBJECTS GCE_OIDC_SUBJECT
+    export "${fixture_env[@]}"
+    local kv
+    for kv in "${extra[@]}"; do
+      export "${kv?}"
+    done
+    ./scripts/write-production-env.sh
+    ./scripts/render-config.sh
+  )
+}
+
+echo "==> case A: singular-only Cursor configuration"
 run_writer_and_render CURSOR_OIDC_SUBJECT=user:singular
-assert_eq "$(count_policy_subjects)" "1" "singular-only subject count"
+assert_eq "$(count_cursor_rules)" "1" "singular-only cursor rule count"
+assert_eq "$(count_google_rules)" "1" "singular-only google rule count"
+assert_eq "$(count_policy_rules)" "2" "singular-only total rule count"
 policy_contains_subject "user:singular" || {
   echo "FAIL: policy missing user:singular" >&2
   exit 1
 }
+policy_contains_subject "${FIXTURE_GCE_SUBJECT}" || {
+  echo "FAIL: policy missing GCE subject" >&2
+  exit 1
+}
+assert_cursor_capabilities "user:singular"
+assert_gce_least_privilege
+assert_multi_issuer_shape
 
-echo "==> case B: plural-only configuration"
+echo "==> case B: plural-only Cursor configuration"
 rm -f "${WORK}/.env"
 rm -f "$(policy_path)"
 run_writer_and_render CURSOR_OIDC_SUBJECTS=user:alpha,user:beta
-assert_eq "$(count_policy_subjects)" "2" "plural-only subject count"
+assert_eq "$(count_cursor_rules)" "2" "plural-only cursor rule count"
+assert_eq "$(count_google_rules)" "1" "plural-only google rule count"
+assert_eq "$(count_policy_rules)" "3" "plural-only total rule count"
 policy_contains_subject "user:alpha" || {
   echo "FAIL: policy missing user:alpha" >&2
   exit 1
@@ -104,14 +260,19 @@ policy_contains_subject "user:beta" || {
   echo "FAIL: policy missing user:beta" >&2
   exit 1
 }
+assert_cursor_capabilities "user:alpha"
+assert_cursor_capabilities "user:beta"
+assert_gce_least_privilege
+assert_multi_issuer_shape
 
-echo "==> case C: plural wins when both are set"
+echo "==> case C: plural wins when both Cursor vars are set"
 rm -f "${WORK}/.env"
 rm -f "$(policy_path)"
 run_writer_and_render \
   CURSOR_OIDC_SUBJECTS=user:alpha,user:beta \
   CURSOR_OIDC_SUBJECT=user:ignored-singular
-assert_eq "$(count_policy_subjects)" "2" "both-set subject count"
+assert_eq "$(count_cursor_rules)" "2" "both-set cursor rule count"
+assert_eq "$(count_policy_rules)" "3" "both-set total rule count"
 policy_contains_subject "user:alpha" || {
   echo "FAIL: policy missing user:alpha" >&2
   exit 1
@@ -124,8 +285,9 @@ policy_lacks_subject "user:ignored-singular" || {
   echo "FAIL: singular subject should be ignored when plural is set" >&2
   exit 1
 }
+assert_multi_issuer_shape
 
-echo "==> case D: neither subject variable supplied"
+echo "==> case D: neither Cursor subject variable supplied"
 rm -f "${WORK}/.env"
 set +e
 (
@@ -136,11 +298,40 @@ set +e
 ) >"${TMP}/case-d.out" 2>&1
 rc=$?
 set -e
-assert_eq "${rc}" "1" "writer should fail when no subject vars are set"
+assert_eq "${rc}" "1" "writer should fail when no Cursor subject vars are set"
 grep -Fq 'CURSOR_OIDC_SUBJECTS or CURSOR_OIDC_SUBJECT' "${TMP}/case-d.out" || {
   echo "FAIL: case D error message missing subject variable names" >&2
   cat "${TMP}/case-d.out" >&2
   exit 1
 }
+
+echo "==> case E: missing GCE subject fails"
+rm -f "${WORK}/.env"
+set +e
+(
+  cd "${WORK}"
+  export "${fixture_env[@]}"
+  unset GCE_OIDC_SUBJECT
+  export CURSOR_OIDC_SUBJECT=user:singular
+  ./scripts/write-production-env.sh
+) >"${TMP}/case-e.out" 2>&1
+rc=$?
+set -e
+assert_eq "${rc}" "1" "writer should fail when GCE_OIDC_SUBJECT is unset"
+grep -Fq 'GCE_OIDC_SUBJECT' "${TMP}/case-e.out" || {
+  echo "FAIL: case E error message missing GCE_OIDC_SUBJECT" >&2
+  cat "${TMP}/case-e.out" >&2
+  exit 1
+}
+
+echo "==> case F: GCE subject appears exactly once with least privilege"
+rm -f "${WORK}/.env"
+rm -f "$(policy_path)"
+run_writer_and_render CURSOR_OIDC_SUBJECT=user:singular
+gce_subject_count="$(grep -cF "    subject: \"${FIXTURE_GCE_SUBJECT}\"" "$(policy_path)" || true)"
+assert_eq "${gce_subject_count}" "1" "GCE subject must appear exactly once"
+assert_eq "$(count_google_rules)" "1" "exactly one google issuer rule"
+assert_gce_least_privilege
+assert_multi_issuer_shape
 
 echo "OK: subject config contract tests passed"

@@ -1,19 +1,30 @@
 # Server-owned broker authorization policy.
 # Rendered by `make render-config` from this template + .env. Does not contain credentials.
 #
-# oidc.audience is the Cloud Run URL (`make predict-url`, or BROKER_URL in .env).
-# Subjects come from CURSOR_OIDC_SUBJECT or comma-separated CURSOR_OIDC_SUBJECTS
+# Multi-issuer OIDC (PADE v0.3.0+): Cursor Cloud Agents and GCE workloads share one
+# broker URL as audience. Authorization is issuer alias + subject.
+#
+# Cursor subjects: CURSOR_OIDC_SUBJECT or comma-separated CURSOR_OIDC_SUBJECTS
 # (`pade identity --audience <BROKER_URL>`). Multiple subjects enable Milestone M
 # A/B dogfood of the same capabilities.
+#
+# GCE subject: GCE_OIDC_SUBJECT (Google OIDC `sub` for the GCE-attached SA).
 #
 # requireRepoURLs: false until Cursor attests complete repo_urls
 # (managed Cloud Agents often lack the full set).
 version: "0.1"
 
 oidc:
-  issuer: https://api.cursor.com
-  audience: ${BROKER_URL}
-  # jwksURL defaults to https://api.cursor.com/keys when omitted
+  issuers:
+    cursor:
+      issuer: https://api.cursor.com
+      audience: ${BROKER_URL}
+      jwksURL: https://api.cursor.com/keys
+
+    google:
+      issuer: https://accounts.google.com
+      audience: ${BROKER_URL}
+      jwksURL: https://www.googleapis.com/oauth2/v3/certs
 
 policies:
-${CURSOR_OIDC_POLICIES_YAML}
+${OIDC_POLICIES_YAML}
