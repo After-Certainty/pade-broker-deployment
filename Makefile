@@ -7,7 +7,9 @@ SHELL := /bin/bash
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 SCRIPTS := $(ROOT)/scripts
 
-.PHONY: help bootstrap-gcp bootstrap-github-wif bootstrap-cursor-wif predict-url render-config print-agent-bindings print-agent-bindings-gce \
+.PHONY: help bootstrap-gcp bootstrap-github-wif bootstrap-cursor-wif \
+	check-aws-s3 bootstrap-aws-s3 show-aws-s3 teardown-aws-s3 \
+	predict-url render-config print-agent-bindings print-agent-bindings-gce \
 	pull-broker build push secret-github-app secret-ga-sa secret-vercel-token secret-vercel-token-subject \
 	deploy health authz-smoke logs teardown-docs describe-url validate-remote \
 	test-providers test-config-contract
@@ -17,6 +19,10 @@ help:
 	@echo "  bootstrap-gcp                Enable APIs; AR repo; runtime SA; IAM"
 	@echo "  bootstrap-github-wif         Deployer SA + GitHub OIDC / WIF (admin, rare)"
 	@echo "  bootstrap-cursor-wif         Cursor OIDC → GCP WIF pool (runtime subject-bound auth)"
+	@echo "  check-aws-s3                 Experiment 007 Phase 3 AWS role preflight (workstation)"
+	@echo "  bootstrap-aws-s3             Create/reconcile Phase 3 AWS role (workstation; not GHA)"
+	@echo "  show-aws-s3                  Show Phase 3 AWS role + ARN to set in GitHub Environment"
+	@echo "  teardown-aws-s3              Delete Phase 3 AWS role only (not Phase 2 / bucket)"
 	@echo "  predict-url                  Print deterministic Cloud Run HTTPS URL"
 	@echo "  render-config                Render policy/bindings from templates + .env"
 	@echo "  print-agent-bindings         Print Cursor agent YAML pointed at the predicted URL"
@@ -46,6 +52,18 @@ bootstrap-github-wif:
 
 bootstrap-cursor-wif:
 	@$(SCRIPTS)/bootstrap-cursor-wif.sh
+
+check-aws-s3:
+	@$(SCRIPTS)/check-aws-s3.sh
+
+bootstrap-aws-s3:
+	@$(SCRIPTS)/bootstrap-aws-s3.sh
+
+show-aws-s3:
+	@$(SCRIPTS)/show-aws-s3.sh
+
+teardown-aws-s3:
+	@$(SCRIPTS)/teardown-aws-s3.sh
 
 predict-url:
 	@$(SCRIPTS)/predict-broker-url.sh
@@ -104,6 +122,7 @@ secret-vercel-token-subject:
 
 test-providers:
 	@cd "$(ROOT)/providers/vercel" && go test ./...
+	@cd "$(ROOT)/providers/aws-s3" && go test ./...
 
 test-config-contract:
 	@$(SCRIPTS)/test-subject-config-contract.sh

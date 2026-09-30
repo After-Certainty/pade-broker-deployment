@@ -35,6 +35,8 @@ chmod +x "${WORK}/scripts/write-production-env.sh" "${WORK}/scripts/render-confi
 
 FIXTURE_GCE_SUBJECT="999000111222333444555"
 
+FIXTURE_AWS_ROLE_ARN="arn:aws:iam::111122223333:role/pade-broker-experiment-007-s3-write"
+
 fixture_env=(
   PROJECT_ID=pade-ci-fixture
   PROJECT_NUMBER=123456789012
@@ -43,6 +45,10 @@ fixture_env=(
   GITHUB_REPOSITORIES=ci-fixture/pade-broker-deployment
   GA_PROPERTY_ID=properties/987654321
   GCE_OIDC_SUBJECT="${FIXTURE_GCE_SUBJECT}"
+  AWS_S3_ROLE_ARN="${FIXTURE_AWS_ROLE_ARN}"
+  AWS_S3_BUCKET=ci-fixture-007
+  AWS_S3_REGION=us-east-1
+  AWS_S3_AUDIENCE=https://ci.example.invalid/pade-aws-s3
 )
 
 policy_path() {
@@ -183,6 +189,10 @@ assert_cursor_capabilities() {
     echo "FAIL: cursor rule missing vercel.diagnostics for ${subject}" >&2
     exit 1
   }
+  if echo "${block}" | grep -Fq "aws.s3.bucket.write"; then
+    echo "FAIL: Cursor rule must not include aws.s3.bucket.write" >&2
+    exit 1
+  fi
 }
 
 assert_gce_least_privilege() {
@@ -200,6 +210,10 @@ assert_gce_least_privilege() {
     echo "FAIL: GCE rule missing github.repo.read" >&2
     exit 1
   }
+  echo "${block}" | grep -Fq "aws.s3.bucket.write" || {
+    echo "FAIL: GCE rule missing aws.s3.bucket.write" >&2
+    exit 1
+  }
   if echo "${block}" | grep -Fq "google-analytics.read"; then
     echo "FAIL: GCE rule must not include google-analytics.read" >&2
     exit 1
@@ -210,7 +224,39 @@ assert_gce_least_privilege() {
   fi
   local cap_count
   cap_count="$(echo "${block}" | grep -cE '^      - ' || true)"
-  assert_eq "${cap_count}" "1" "GCE rule must have exactly one capability"
+  assert_eq "${cap_count}" "2" "GCE rule must have exactly two capabilities (github + aws.s3)"
+}
+
+assert_aws_s3_bindings() {
+  local bindings="${WORK}/config/.generated/broker-bindings.yaml"
+  [[ -f "${bindings}" ]] || {
+    echo "FAIL: bindings file missing" >&2
+    exit 1
+  }
+  grep -Fq 'aws.s3.bucket.write:' "${bindings}" || {
+    echo "FAIL: bindings missing aws.s3.bucket.write" >&2
+    exit 1
+  }
+  grep -Fq '/providers/pade-provider-aws-s3' "${bindings}" || {
+    echo "FAIL: bindings missing aws-s3 provider path" >&2
+    exit 1
+  }
+  grep -Fq "roleArn: \"${FIXTURE_AWS_ROLE_ARN}\"" "${bindings}" || {
+    echo "FAIL: bindings missing fixture roleArn" >&2
+    exit 1
+  }
+  grep -Fq 'bucket: "ci-fixture-007"' "${bindings}" || {
+    echo "FAIL: bindings missing fixture bucket" >&2
+    exit 1
+  }
+  grep -Fq 'audience: "https://ci.example.invalid/pade-aws-s3"' "${bindings}" || {
+    echo "FAIL: bindings missing fixture audience" >&2
+    exit 1
+  }
+  if grep -Eiq 'AKIA[0-9A-Z]{16}|aws_secret_access_key|AWS_SECRET_ACCESS_KEY|BEGIN (RSA )?PRIVATE KEY' "${bindings}"; then
+    echo "FAIL: bindings appear to contain credential material" >&2
+    exit 1
+  fi
 }
 
 run_writer_and_render() {
@@ -244,6 +290,7 @@ policy_contains_subject "${FIXTURE_GCE_SUBJECT}" || {
 assert_cursor_capabilities "user:singular"
 assert_gce_least_privilege
 assert_multi_issuer_shape
+assert_aws_s3_bindings
 
 echo "==> case B: plural-only Cursor configuration"
 rm -f "${WORK}/.env"
@@ -312,8 +359,7 @@ set +e
   cd "${WORK}"
   export "${fixture_env[@]}"
   unset GCE_OIDC_SUBJECT
-  export CURSOR_OIDC_SUBJECT=user:singular
-  ./scripts/write-production-env.sh
+  CURSOR_OIDC_SUBJECT=user:singular ./scripts/write-production-env.sh
 ) >"${TMP}/case-e.out" 2>&1
 rc=$?
 set -e
@@ -321,6 +367,24 @@ assert_eq "${rc}" "1" "writer should fail when GCE_OIDC_SUBJECT is unset"
 grep -Fq 'GCE_OIDC_SUBJECT' "${TMP}/case-e.out" || {
   echo "FAIL: case E error message missing GCE_OIDC_SUBJECT" >&2
   cat "${TMP}/case-e.out" >&2
+  exit 1
+}
+
+echo "==> case E2: missing AWS_S3_ROLE_ARN fails"
+rm -f "${WORK}/.env"
+set +e
+(
+  cd "${WORK}"
+  export "${fixture_env[@]}"
+  unset AWS_S3_ROLE_ARN
+  CURSOR_OIDC_SUBJECT=user:singular ./scripts/write-production-env.sh
+) >"${TMP}/case-e2.out" 2>&1
+rc=$?
+set -e
+assert_eq "${rc}" "1" "writer should fail when AWS_S3_ROLE_ARN is unset"
+grep -Fq 'AWS_S3_ROLE_ARN' "${TMP}/case-e2.out" || {
+  echo "FAIL: case E2 error message missing AWS_S3_ROLE_ARN" >&2
+  cat "${TMP}/case-e2.out" >&2
   exit 1
 }
 

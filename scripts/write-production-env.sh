@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Write deployment .env from GitHub Environment variables (identifiers only).
 # PEMs / SA JSON / Vercel tokens stay in Secret Manager.
+# AWS S3 values are non-secret identifiers (role ARN contains an account ID but
+# is not a credential). No AWS access keys belong here or in GitHub Secrets.
 set -euo pipefail
 
 required=(
@@ -11,6 +13,10 @@ required=(
   GITHUB_REPOSITORIES
   GA_PROPERTY_ID
   GCE_OIDC_SUBJECT
+  AWS_S3_ROLE_ARN
+  AWS_S3_BUCKET
+  AWS_S3_REGION
+  AWS_S3_AUDIENCE
 )
 
 for v in "${required[@]}"; do
@@ -39,4 +45,8 @@ fi
   if [[ -n "${CURSOR_OIDC_SUBJECTS:-}" ]]; then
     echo "CURSOR_OIDC_SUBJECTS=${CURSOR_OIDC_SUBJECTS}"
   fi
+  echo "AWS_S3_ROLE_ARN=${AWS_S3_ROLE_ARN}"
+  echo "AWS_S3_BUCKET=${AWS_S3_BUCKET}"
+  echo "AWS_S3_REGION=${AWS_S3_REGION}"
+  echo "AWS_S3_AUDIENCE=${AWS_S3_AUDIENCE}"
 } > .env
