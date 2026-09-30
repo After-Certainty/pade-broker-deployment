@@ -48,3 +48,18 @@ ${GITHUB_REPOSITORIES_YAML}
         poolId: "${CURSOR_WIF_POOL_ID}"
         providerId: "${CURSOR_WIF_PROVIDER_ID}"
         secretIdPrefix: "${VERCEL_SUBJECT_SECRET_PREFIX}"
+
+  # Deployment-owned AWS S3 fulfillment (Experiment 007 Phase 3).
+  # Caller Google/GCE identity authorizes the capability; Cloud Run runtime
+  # identity federates to AWS STS. No AWS access keys in config.
+  # See docs/experiment-007-phase-3.md.
+  aws.s3.bucket.write:
+    provider: exec
+    exec:
+      command: ["/providers/pade-provider-aws-s3"]
+      config:
+        roleArn: "${AWS_S3_ROLE_ARN}"
+        region: "${AWS_S3_REGION}"
+        bucket: "${AWS_S3_BUCKET}"
+        prefix: "experiment-007/"
+        audience: "${AWS_S3_AUDIENCE}"

@@ -18,7 +18,7 @@ Roadmap (Milestones L–O): [ROADMAP.md](https://github.com/After-Certainty/pade
 | Layer | Owns | Does not own |
 |-------|------|----------------|
 | **PADE core** | Portable capability intent, Broker/Consumer contracts, generic Material, broker-verified identity context for trusted broker-side exec providers (v0.1.1+) | Vercel (or other vendor) providers, schemas, SDKs, CLIs, or user→secret tables |
-| **This deployment repo** | Concrete policy/bindings, deployment-owned exec providers, Cloud Run + Secret Manager layout, GitHub deploy WIF, Cursor runtime WIF, IAM, Vercel fulfillment | PADE protocol changes; durable credentials on the agent VM |
+| **This deployment repo** | Concrete policy/bindings, deployment-owned exec providers, Cloud Run + Secret Manager layout, GitHub deploy WIF, Cursor runtime WIF, IAM, Vercel fulfillment, Experiment 007 AWS S3 fulfillment | PADE protocol changes; durable credentials on the agent VM |
 | **Consumer / Cloud Agent** | Ordinary vendor tools (e.g. Vercel CLI) under released PADE tooling (`pade exec`); receives Material only for scoped children | Durable App keys, SA JSON, or Vercel tokens on the VM |
 
 A new reader should **not** conclude that PADE itself contains a Vercel provider. Vercel fulfillment lives only under [`providers/vercel/`](providers/vercel/) in this repository.
@@ -38,9 +38,10 @@ GCE Coder workspace  (Google OIDC via metadata; broker.identity: gce)
 ```
 
 One broker URL; multi-issuer trust (`cursor` + `google`). Authorization is issuer
-alias + subject. GCE is allowlisted for `github.repo.read` only. Vercel Material
-remains Cursor→GCP WIF and must not be assumed for GCE identity. Coder is not an
-IdP — Google identity comes from the GCE metadata server.
+alias + subject. GCE is allowlisted for `github.repo.read` and
+`aws.s3.bucket.write` (Experiment 007 Phase 3). Vercel Material remains
+Cursor→GCP WIF and must not be assumed for GCE identity. Coder is not an IdP —
+Google identity comes from the GCE metadata server.
 
 ### Recommended Vercel path (`fulfillment: subject-secret-wif`)
 
@@ -66,7 +67,7 @@ ordinary Vercel CLI
 
 The provider derives the subject-specific Secret Manager id **deterministically** from the verified subject (hash prefix). That naming convention is **not** authorization. Google IAM on the federated principal is the authorization boundary. Before federation, the provider validates that `identity.subject` matches the `sub` claim of the forwarded `idToken` when both are present.
 
-### Two WIF trust paths (do not conflate)
+### Three trust paths (do not conflate)
 
 ```text
 GitHub Actions
@@ -80,12 +81,22 @@ Cursor Cloud Agent
 runtime WIF pool/provider (pade-broker-cursor)
     ↓
 subject-bound Secret Manager authority (federated principal per subject)
+
+Cloud Run broker runtime SA
+    ↓ Google ID token (audience = AWS_S3_AUDIENCE)
+AWS STS AssumeRoleWithWebIdentity
+    ↓
+temporary AWS Material for aws.s3.bucket.write
 ```
 
 | Path | Identity | Purpose |
 |------|----------|---------|
 | **GitHub Actions → GCP** | GitHub OIDC → deployer SA | CI/CD: push overlay, deploy Cloud Run |
 | **Cursor → GCP** | Cursor OIDC (broker-verified) → federated subject | Runtime: subject-bound Secret Manager access for Vercel Material |
+| **Cloud Run → AWS** | Runtime SA Google ID token → AWS STS | Runtime: Experiment 007 Phase 3 S3 PutObject Material |
+
+GCE/Coder identity authenticates to the **broker** only. It is **not** the AWS
+STS subject token. See [`docs/experiment-007-phase-3.md`](docs/experiment-007-phase-3.md).
 
 ### Runtime service account vs federated subject
 
@@ -173,6 +184,10 @@ cp .env.example .env
 | `CURSOR_OIDC_SUBJECT` | yes* | From a Cursor Cloud Agent: `pade identity --audience "$(make -s predict-url)"` |
 | `CURSOR_OIDC_SUBJECTS` | no | Comma-separated subjects for A/B isolation dogfood (overrides single subject) |
 | `GCE_OIDC_SUBJECT` | yes | Google OIDC `sub` for the GCE-attached SA (broker authz; non-secret) |
+| `AWS_S3_ROLE_ARN` | yes | Phase 3 role ARN from `make bootstrap-aws-s3` (account ID; do not commit) |
+| `AWS_S3_BUCKET` | yes* | Default in `versions.env`: `after-certainty-rc-pade-007-1abcdf` |
+| `AWS_S3_REGION` | yes* | Default: `us-east-1` |
+| `AWS_S3_AUDIENCE` | yes* | Default: `https://pade-broker-aws-s3.after-certainty.aws` |
 | `BROKER_URL` | no | Defaults to the predicted Cloud Run URL |
 | `REGION`, `SERVICE`, image pins | no | Override [`versions.env`](versions.env) defaults |
 
@@ -216,6 +231,10 @@ For the optional shared-token path instead, see [docs/milestone-l-vercel.md](doc
 | `make bootstrap-gcp` | Enable APIs; create Artifact Registry, runtime SA, IAM |
 | `make bootstrap-github-wif` | Deployer SA + GitHub OIDC / WIF pool (admin; rare) |
 | `make bootstrap-cursor-wif` | Cursor OIDC → GCP WIF pool (runtime subject-bound authority) |
+| `make check-aws-s3` | Experiment 007 Phase 3 AWS role preflight (workstation) |
+| `make bootstrap-aws-s3` | Create/reconcile Phase 3 AWS role (workstation; not GHA) |
+| `make show-aws-s3` | Show Phase 3 role ARN for GitHub Environment |
+| `make teardown-aws-s3` | Delete Phase 3 AWS role only |
 | `make predict-url` | Print deterministic Cloud Run HTTPS URL |
 | `make render-config` | Render policy/bindings from templates + `.env` |
 | `make print-agent-bindings` | Print Cursor agent YAML pointed at the predicted URL |
@@ -243,6 +262,7 @@ For the optional shared-token path instead, see [docs/milestone-l-vercel.md](doc
 | `pade-broker` binary | **Pull** `ghcr.io/after-certainty/pade-broker@sha256:fb52aadb8a0cdddf6b8b455ed1b7616afaacd887690fbbd57aec2218d90c834d` |
 | GitHub + GA exec providers | **Build** from PADE `v0.3.0` tag during `docker build` |
 | Vercel exec provider | **Build** from `providers/vercel` in this repo (deployment-owned) |
+| AWS S3 exec provider | **Build** from `providers/aws-s3` in this repo (Experiment 007 Phase 3) |
 | Policy / bindings | **Render** from `config/broker-*.yaml.tmpl` + `.env`, then copy into the overlay |
 | App PEM / SA JSON | **Mount** from Secret Manager at deploy |
 | Shared Vercel token | **Mount** only if `MOUNT_SHARED_VERCEL_TOKEN=1` |
@@ -264,6 +284,7 @@ For the optional shared-token path instead, see [docs/milestone-l-vercel.md](doc
 | `github.repo.read` | `pade-provider-github` (from PADE) | Short-lived `GITHUB_TOKEN` | Reference provider |
 | `google-analytics.read` | `pade-provider-google-analytics` (from PADE) | `GA_ACCESS_TOKEN`, `GA_PROPERTY_ID` | Reference provider |
 | `vercel.diagnostics` | `pade-provider-vercel` (this repo) | `VERCEL_TOKEN` Material | Opaque id; default fulfillment `subject-secret-wif` |
+| `aws.s3.bucket.write` | `pade-provider-aws-s3` (this repo) | Temp AWS creds + `AWS_S3_BUCKET` / `AWS_S3_PREFIX` | GCE only; Cloud Run → AWS STS ([docs/experiment-007-phase-3.md](docs/experiment-007-phase-3.md)) |
 
 Agent-side examples: [`agent/broker.bindings.example.yaml`](agent/broker.bindings.example.yaml) (Cursor) or [`agent/broker.bindings.gce.example.yaml`](agent/broker.bindings.gce.example.yaml) (GCE); `make print-agent-bindings` / `make print-agent-bindings-gce`.
 

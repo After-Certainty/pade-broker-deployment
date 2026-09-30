@@ -35,6 +35,11 @@ jobs:
       CURSOR_OIDC_SUBJECT: ${{ vars.CURSOR_OIDC_SUBJECT }}
       CURSOR_OIDC_SUBJECTS: ${{ vars.CURSOR_OIDC_SUBJECTS }}
       GCE_OIDC_SUBJECT: ${{ vars.GCE_OIDC_SUBJECT }}
+      # Experiment 007 Phase 3 — non-secret AWS identifiers (no access keys).
+      AWS_S3_ROLE_ARN: ${{ vars.AWS_S3_ROLE_ARN }}
+      AWS_S3_BUCKET: ${{ vars.AWS_S3_BUCKET }}
+      AWS_S3_REGION: ${{ vars.AWS_S3_REGION }}
+      AWS_S3_AUDIENCE: ${{ vars.AWS_S3_AUDIENCE }}
     steps:
       - name: Checkout
         # actions/checkout@v7.0.1

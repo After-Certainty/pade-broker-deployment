@@ -94,10 +94,19 @@ Set on Environment **`production`** (non-secret identifiers):
 | `CURSOR_OIDC_SUBJECT` | Single Cursor OIDC subject allowlisted in broker policy (one-subject deploys) |
 | `CURSOR_OIDC_SUBJECTS` | Comma-separated Cursor OIDC subject allowlist (preferred when non-empty) |
 | `GCE_OIDC_SUBJECT` | Google OIDC `sub` for the GCE-attached service account (broker authorization; non-secret) |
+| `AWS_S3_ROLE_ARN` | Phase 3 IAM role ARN from `make bootstrap-aws-s3` / `make show-aws-s3` (contains account ID; **Environment variable, not a Secret**) |
+| `AWS_S3_BUCKET` | `after-certainty-rc-pade-007-1abcdf` |
+| `AWS_S3_REGION` | `us-east-1` |
+| `AWS_S3_AUDIENCE` | `https://pade-broker-aws-s3.after-certainty.aws` |
 
 Set **at least one** of `CURSOR_OIDC_SUBJECT` or `CURSOR_OIDC_SUBJECTS`. If both are
 configured, `CURSOR_OIDC_SUBJECTS` wins — the same precedence as local `.env` and
 `make render-config` (see [`scripts/render-config.sh`](../scripts/render-config.sh)).
+
+**AWS S3 (Experiment 007 Phase 3):** do **not** add AWS access keys or GCP SA JSON
+as GitHub Secrets. Bootstrap the Phase 3 role from a workstation
+(`make bootstrap-aws-s3`) before merging to `master`. Details:
+[`docs/experiment-007-phase-3.md`](experiment-007-phase-3.md).
 
 `GCE_OIDC_SUBJECT` is **required**. It is broker authorization configuration
 (issuer alias `google` + subject allowlist), **not** part of the GitHub Actions →
@@ -116,15 +125,16 @@ set matching names in the Environment and extend the workflow `.env` writer.
 
 ---
 
-## 5. Two WIF trust paths
+## 5. Three trust paths (do not conflate)
 
-This repository uses **two distinct** Workload Identity Federation relationships.
-Do not describe them as one shared WIF mechanism.
+This repository uses **three distinct** cloud trust relationships. Do not collapse
+them into one “WIF” story.
 
-| Path | Trigger | Pool (default id) | Principal | Purpose |
-|------|---------|-------------------|-----------|---------|
-| **GitHub Actions → GCP** | CI/CD OIDC | `pade-broker-github` | Deployer SA | Push overlay, deploy Cloud Run |
-| **Cursor → GCP** | Runtime OIDC after broker verify | `pade-broker-cursor` | Federated Cursor subject | Subject-bound Secret Manager access for Vercel Material |
+| Path | Trigger | Principal | Purpose |
+|------|---------|-----------|---------|
+| **GitHub Actions → GCP** | CI/CD OIDC → pool `pade-broker-github` | Deployer SA | Push overlay, deploy Cloud Run |
+| **Cursor → GCP** | Runtime OIDC after broker verify → pool `pade-broker-cursor` | Federated Cursor subject | Subject-bound Secret Manager access for Vercel Material |
+| **Cloud Run → AWS** | Runtime SA Google ID token (`AWS_S3_AUDIENCE`) | Phase 3 IAM role | Temporary AWS Material for `aws.s3.bucket.write` |
 
 ```text
 GitHub Actions
@@ -138,13 +148,18 @@ Cursor Cloud Agent
 runtime WIF pool/provider
     ↓
 subject-bound Secret Manager authority
+
+Cloud Run broker runtime SA
+    ↓ Google ID token (AWS_S3_AUDIENCE)
+AWS STS AssumeRoleWithWebIdentity
+    ↓
+temporary AWS Material
 ```
 
 GitHub Actions workflows configure **only** the deploy path. Cursor runtime WIF is
 bootstrapped with `make bootstrap-cursor-wif` and documented in
-[`milestone-m-wif.md`](milestone-m-wif.md). Production Environment variables need the
-Cursor subject allowlist (`CURSOR_OIDC_SUBJECT` or subjects list) and, for Vercel
-subject-secret-wif, per-subject secrets populated outside GitHub (Secret Manager).
+[`milestone-m-wif.md`](milestone-m-wif.md). AWS role bootstrap is workstation-only
+(`make bootstrap-aws-s3`) — see [`experiment-007-phase-3.md`](experiment-007-phase-3.md).
 
 Shared Secret Manager id `vercel-token` is optional (Milestone L / `static-token-file`).
 Recommended deploys use subject-bound secrets and omit

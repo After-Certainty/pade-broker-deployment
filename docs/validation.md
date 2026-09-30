@@ -16,7 +16,7 @@ Covered by [pade](https://github.com/After-Certainty/pade) CI and the released
 Local overlay checks (this repo):
 
 ```bash
-make test-providers   # deployment-owned Vercel provider unit tests (fake tokens)
+make test-providers   # deployment-owned Vercel + AWS S3 provider unit tests (fakes only)
 make render-config
 make build            # requires Docker; pulls digest-pinned broker
 ```
@@ -24,6 +24,7 @@ make build            # requires Docker; pulls digest-pinned broker
 - [ ] `make pull-broker` succeeds (digest-pinned image from `versions.env`)
 - [ ] `make test-providers` passes
 - [ ] `make build` produces an image containing `/providers/pade-provider-vercel`
+      and `/providers/pade-provider-aws-s3`
 - [ ] Rendered files under `config/.generated/` contain **no** secret values
 
 ## Stage 2 — Cloud Run health
@@ -95,8 +96,8 @@ broker:
   identity: gce
 ```
 
-Request capability `github.repo.read` only (current GCE allowlist). Then run a
-child that checks Material without printing it:
+Request capabilities `github.repo.read` and (after Experiment 007 Phase 3 deploy)
+`aws.s3.bucket.write`. Then run a child that checks Material without printing it:
 
 ```bash
 # After pade exec injects Material for the child:
@@ -116,16 +117,20 @@ real GCE metadata JWT
   → deployed Cloud Run broker
   → google issuer selected
   → issuer+subject policy
-  → github.repo.read
+  → github.repo.read / aws.s3.bucket.write
   → broker-derived Material reaches child
 ```
 
 Do **not** automate this from GitHub Actions. Do **not** print token contents.
+For AWS S3 acceptance (PutObject via temporary Material), see
+[`experiment-007-phase-3.md`](experiment-007-phase-3.md).
 
 - [ ] GCE resolve for `github.repo.read` succeeds for the allowlisted `GCE_OIDC_SUBJECT`
 - [ ] Child sees non-empty `GITHUB_TOKEN` without printing it
+- [ ] GCE resolve for `aws.s3.bucket.write` succeeds after Phase 3 deploy (separate checklist)
 - [ ] `vercel.diagnostics` / `google-analytics.read` are **not** assumed for GCE
       (Vercel fulfillment remains Cursor→GCP WIF)
+- [ ] Cursor subjects do **not** receive `aws.s3.bucket.write` unless explicitly authorized
 
 ### Architecture (one broker, two issuers)
 
@@ -149,8 +154,9 @@ Notes:
   Compute Engine metadata server.
 - Broker authorization is **issuer alias + subject**. Adding a trusted issuer
   does not itself grant capabilities.
-- GCE currently receives only `github.repo.read` (least privilege). Cursor keeps
-  `github.repo.read`, `google-analytics.read`, and `vercel.diagnostics`.
+- GCE receives `github.repo.read` and `aws.s3.bucket.write`. Cursor keeps
+  `github.repo.read`, `google-analytics.read`, and `vercel.diagnostics` (no AWS
+  unless explicitly authorized).
 
 ## Stage 5 — Material resolution (GitHub + GA + Vercel subject-secret-wif)
 

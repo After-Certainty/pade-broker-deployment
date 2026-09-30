@@ -72,6 +72,10 @@ GITHUB_REPOSITORIES=After-Certainty/pade
 GA_PROPERTY_ID=properties/987654321
 CURSOR_OIDC_SUBJECT=user:dev-local-subject
 GCE_OIDC_SUBJECT=123456789012345678901
+AWS_S3_ROLE_ARN=arn:aws:iam::111122223333:role/pade-broker-experiment-007-s3-write
+AWS_S3_BUCKET=ci-fixture-007
+AWS_S3_REGION=us-east-1
+AWS_S3_AUDIENCE=https://ci.example.invalid/pade-aws-s3
 EOF
 ```
 
@@ -84,15 +88,16 @@ with Secret Manager. See `docs/milestone-m-wif.md` and `docs/milestone-l-vercel.
 
 ### Deployment-owned providers
 
-`providers/vercel/` is a stdlib-only Go exec provider built into the runtime
-overlay. Local checks:
+`providers/vercel/` and `providers/aws-s3/` are stdlib-only Go exec providers
+built into the runtime overlay. Local checks:
 
 ```bash
 make test-providers   # or: cd providers/vercel && go test ./...
+                      #     cd providers/aws-s3 && go test ./...
 ```
 
-Uses only fake tokens. Requires Go on the host (Docker build uses `golang:1.26`
-and does not need host Go for `make build`).
+Uses only fake tokens / fake metadata+STS. Requires Go on the host (Docker build
+uses `golang:1.26` and does not need host Go for `make build`).
 
 ### Build + run the broker locally (the local "hello world")
 

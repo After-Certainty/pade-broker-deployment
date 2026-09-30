@@ -51,10 +51,37 @@ jobs:
           GA_PROPERTY_ID=properties/987654321
           CURSOR_OIDC_SUBJECT=user:ci-fixture-subject
           GCE_OIDC_SUBJECT=123456789012345678901
+          AWS_S3_ROLE_ARN=arn:aws:iam::111122223333:role/pade-broker-experiment-007-s3-write
+          AWS_S3_BUCKET=ci-fixture-007
+          AWS_S3_REGION=us-east-1
+          AWS_S3_AUDIENCE=https://ci.example.invalid/pade-aws-s3
           EOF
 
       - name: Render config
         run: make render-config
+
+      - name: Assert AWS S3 policy/bindings contract
+        run: |
+          set -euo pipefail
+          POLICY=config/.generated/broker-policy.yaml
+          BINDINGS=config/.generated/broker-bindings.yaml
+          grep -Fq 'aws.s3.bucket.write' "$POLICY"
+          # GCE (google) rule includes AWS; Cursor rules must not.
+          awk '
+            /^  - issuer: google$/ {in_g=1; in_c=0; next}
+            /^  - issuer: cursor$/ {in_c=1; in_g=0; next}
+            /^  - issuer: / {in_g=0; in_c=0}
+            in_g && /aws\.s3\.bucket\.write/ {g=1}
+            in_c && /aws\.s3\.bucket\.write/ {c=1}
+            END { if (!g) { print "FAIL: GCE policy missing aws.s3.bucket.write" > "/dev/stderr"; exit 1 }
+                  if (c) { print "FAIL: Cursor policy must not include aws.s3.bucket.write" > "/dev/stderr"; exit 1 } }
+          ' "$POLICY"
+          grep -Fq '/providers/pade-provider-aws-s3' "$BINDINGS"
+          grep -Fq 'roleArn: "arn:aws:iam::111122223333:role/pade-broker-experiment-007-s3-write"' "$BINDINGS"
+          grep -Fq 'bucket: "ci-fixture-007"' "$BINDINGS"
+          grep -Fq 'audience: "https://ci.example.invalid/pade-aws-s3"' "$BINDINGS"
+          # No credential-shaped values in generated config.
+          ! grep -Eiq 'AKIA[0-9A-Z]{16}|aws_secret_access_key|AWS_SECRET_ACCESS_KEY|BEGIN (RSA )?PRIVATE KEY' "$POLICY" "$BINDINGS"
 
       - name: Build runtime overlay image
         run: make build
