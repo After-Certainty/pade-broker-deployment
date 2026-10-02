@@ -3,11 +3,12 @@
 #   - ghcr.io/after-certainty/pade-broker (digest-pinned via BASE_IMAGE build-arg)
 #   - PADE reference exec providers (built from PADE v0.3.0 source at image build time)
 #   - deployment-owned Vercel exec provider (built from providers/vercel in this repo)
+#   - deployment-owned Sanity exec provider (built from providers/sanity in this repo)
 #   - deployment-owned AWS S3 exec provider (built from providers/aws-s3 in this repo)
 #   - rendered policy/bindings from config/.generated (no durable credentials)
 #
-# Durable authority (App private key, service account JSON, Vercel token) is mounted
-# at deploy time via Secret Manager — never baked into the image.
+# Durable authority (App private key, service account JSON, subject-bound tokens)
+# is mounted or fetched at runtime via Secret Manager — never baked into the image.
 # AWS fulfillment uses Cloud Run runtime identity → STS (no AWS CLI / access keys).
 
 ARG BASE_IMAGE
@@ -32,6 +33,11 @@ COPY providers/vercel /src-vercel
 WORKDIR /src-vercel
 RUN CGO_ENABLED=0 go build -o /out/pade-provider-vercel .
 
+# Deployment-owned Sanity provider (rehearsal credential fulfillment; subject-secret-wif only).
+COPY providers/sanity /src-sanity
+WORKDIR /src-sanity
+RUN CGO_ENABLED=0 go build -o /out/pade-provider-sanity .
+
 # Deployment-owned AWS S3 provider (Experiment 007 Phase 3; Cloud Run → AWS STS).
 COPY providers/aws-s3 /src-aws-s3
 WORKDIR /src-aws-s3
@@ -41,6 +47,7 @@ FROM ${BASE_IMAGE}
 COPY --from=providers /out/pade-provider-github /providers/pade-provider-github
 COPY --from=providers /out/pade-provider-google-analytics /providers/pade-provider-google-analytics
 COPY --from=providers /out/pade-provider-vercel /providers/pade-provider-vercel
+COPY --from=providers /out/pade-provider-sanity /providers/pade-provider-sanity
 COPY --from=providers /out/pade-provider-aws-s3 /providers/pade-provider-aws-s3
 COPY config/.generated/broker-policy.yaml /config/policy.yaml
 COPY config/.generated/broker-bindings.yaml /config/bindings.yaml

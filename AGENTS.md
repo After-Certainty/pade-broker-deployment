@@ -82,18 +82,21 @@ EOF
 Rendered output lands in `config/.generated/` (gitignored). Replace with real
 identifiers before any real deploy.
 
-Do **not** put a Vercel token in `.env`. Use `make secret-vercel-token-subject`
-(recommended) or `make secret-vercel-token` (shared / static-token-file only)
-with Secret Manager. See `docs/milestone-m-wif.md` and `docs/milestone-l-vercel.md`.
+Do **not** put a Vercel or Sanity token in `.env`. Use
+`make secret-vercel-token-subject` (recommended) or `make secret-vercel-token`
+(shared / static-token-file only) and `make secret-sanity-token-subject` with
+Secret Manager. See `docs/milestone-m-wif.md`, `docs/milestone-l-vercel.md`, and
+`docs/milestone-sanity-rehearsal.md`.
 
 ### Deployment-owned providers
 
-`providers/vercel/` and `providers/aws-s3/` are stdlib-only Go exec providers
-built into the runtime overlay. Local checks:
+`providers/vercel/`, `providers/aws-s3/`, and `providers/sanity/` are stdlib-only
+Go exec providers built into the runtime overlay. Local checks:
 
 ```bash
 make test-providers   # or: cd providers/vercel && go test ./...
                       #     cd providers/aws-s3 && go test ./...
+                      #     cd providers/sanity && go test ./...
 ```
 
 Uses only fake tokens / fake metadata+STS. Requires Go on the host (Docker build

@@ -1,7 +1,8 @@
 # Agent-side bindings for a Cursor Cloud Agent (or local Consumer).
 # Point endpoint + audience at your Cloud Run broker URL.
-# The agent VM must NOT hold App keys, service account JSON, Vercel tokens, or
-# other durable credentials. Material is injected only for `pade exec` children.
+# The agent VM must NOT hold App keys, service account JSON, Vercel tokens,
+# Sanity tokens, or other durable credentials. Material is injected only for
+# `pade exec` children.
 #
 # Copy and replace YOUR-BROKER-URL (same value as oidc.audience on the broker),
 # or run: make print-agent-bindings
@@ -23,6 +24,16 @@ capabilities:
   # Ordinary Vercel CLI receives VERCEL_TOKEN Material from the broker
   # (deployment default: subject-secret-wif; optional static-token-file compatibility).
   vercel.diagnostics:
+    provider: broker
+    broker:
+      endpoint: https://YOUR-BROKER-URL
+      audience: https://YOUR-BROKER-URL
+
+  # Sanity CLI/API receives SANITY_API_TOKEN Material from the broker
+  # (subject-secret-wif). Broker policy grants this only to subjects listed in
+  # SANITY_CURSOR_OIDC_SUBJECTS. Project/dataset remain consumer configuration.
+  # See docs/milestone-sanity-rehearsal.md.
+  sanity.rehearsal.write:
     provider: broker
     broker:
       endpoint: https://YOUR-BROKER-URL

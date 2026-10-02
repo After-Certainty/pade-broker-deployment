@@ -49,6 +49,23 @@ ${GITHUB_REPOSITORIES_YAML}
         providerId: "${CURSOR_WIF_PROVIDER_ID}"
         secretIdPrefix: "${VERCEL_SUBJECT_SECRET_PREFIX}"
 
+  # Deployment-owned Sanity rehearsal fulfillment (opaque, non-normative capability id).
+  # subject-secret-wif only: Cursor → GCP WIF → per-subject Secret Manager IAM.
+  # Capability name does not mediate individual Sanity operations; downstream
+  # credential authority remains authoritative. Project/dataset are consumer config.
+  # See docs/milestone-sanity-rehearsal.md.
+  sanity.rehearsal.write:
+    provider: exec
+    exec:
+      command: ["/providers/pade-provider-sanity"]
+      config:
+        fulfillment: subject-secret-wif
+        tokenEnv: SANITY_API_TOKEN
+        projectNumber: "${PROJECT_NUMBER}"
+        poolId: "${CURSOR_WIF_POOL_ID}"
+        providerId: "${CURSOR_WIF_PROVIDER_ID}"
+        secretIdPrefix: "${SANITY_SUBJECT_SECRET_PREFIX}"
+
   # Deployment-owned AWS S3 fulfillment (Experiment 007 Phase 3).
   # Caller Google/GCE identity authorizes the capability; Cloud Run runtime
   # identity federates to AWS STS. No AWS access keys in config.

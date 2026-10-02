@@ -113,6 +113,17 @@ vercel_subject_secret_id() {
   printf '%s-%s' "${prefix}" "${hash}"
 }
 
+# Deterministic Secret Manager id for a Cursor OIDC subject (Sanity rehearsal).
+# Must stay in sync with providers/sanity secretIDForSubject.
+# Hash-derived name is not authorization — Secret Manager IAM is.
+sanity_subject_secret_id() {
+  local subject="$1"
+  local prefix="${SANITY_SUBJECT_SECRET_PREFIX:-sanity-token-sub}"
+  local hash
+  hash="$(printf '%s' "${subject}" | sha256sum | awk '{print $1}' | cut -c1-16)"
+  printf '%s-%s' "${prefix}" "${hash}"
+}
+
 # IAM member for a Cursor WIF federated subject (Milestone M).
 cursor_federated_principal_member() {
   local subject="$1"

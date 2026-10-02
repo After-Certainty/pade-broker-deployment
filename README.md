@@ -183,6 +183,7 @@ cp .env.example .env
 | `GA_PROPERTY_ID` | yes | GA4 property resource name, e.g. `properties/123456789` |
 | `CURSOR_OIDC_SUBJECT` | yes* | From a Cursor Cloud Agent: `pade identity --audience "$(make -s predict-url)"` |
 | `CURSOR_OIDC_SUBJECTS` | no | Comma-separated subjects for A/B isolation dogfood (overrides single subject) |
+| `SANITY_CURSOR_OIDC_SUBJECTS` | no | Optional Sanity capability allowlist (subset of Cursor subjects; default empty) |
 | `GCE_OIDC_SUBJECT` | yes | Google OIDC `sub` for the GCE-attached SA (broker authz; non-secret) |
 | `AWS_S3_ROLE_ARN` | yes | Phase 3 role ARN from `make bootstrap-aws-s3` (account ID; do not commit) |
 | `AWS_S3_BUCKET` | yes* | Default in `versions.env`: `after-certainty-rc-pade-007-1abcdf` |
@@ -246,13 +247,14 @@ For the optional shared-token path instead, see [docs/milestone-l-vercel.md](doc
 | `make secret-ga-sa` | Pipe GA service account JSON into Secret Manager |
 | `make secret-vercel-token` | Pipe shared Vercel token (static-token-file / Milestone L) |
 | `make secret-vercel-token-subject` | Pipe subject-bound Vercel token (`SUBJECT=…`) |
+| `make secret-sanity-token-subject` | Pipe subject-bound Sanity token (`SUBJECT=…`) |
 | `make deploy` | Deploy runtime image; mount secrets as files |
 | `make health` | Stage 2 liveness |
 | `make authz-smoke` | Stage 3: unauthenticated `/v1/resolve` → 401 |
 | `make logs` | Recent broker Cloud Logging lines |
 | `make describe-url` | Print deployed `status.url` |
 | `make teardown-docs` | Print teardown commands (does not delete) |
-| `make test-providers` | Unit-test deployment-owned exec providers |
+| `make test-providers` | Unit-test deployment-owned exec providers (vercel, aws-s3, sanity) |
 | `make validate-remote` | `health` + `authz-smoke` against the deployed URL |
 
 ## What this repo builds vs pulls vs mounts
@@ -262,11 +264,12 @@ For the optional shared-token path instead, see [docs/milestone-l-vercel.md](doc
 | `pade-broker` binary | **Pull** `ghcr.io/after-certainty/pade-broker@sha256:fb52aadb8a0cdddf6b8b455ed1b7616afaacd887690fbbd57aec2218d90c834d` |
 | GitHub + GA exec providers | **Build** from PADE `v0.3.0` tag during `docker build` |
 | Vercel exec provider | **Build** from `providers/vercel` in this repo (deployment-owned) |
+| Sanity exec provider | **Build** from `providers/sanity` in this repo (deployment-owned) |
 | AWS S3 exec provider | **Build** from `providers/aws-s3` in this repo (Experiment 007 Phase 3) |
 | Policy / bindings | **Render** from `config/broker-*.yaml.tmpl` + `.env`, then copy into the overlay |
 | App PEM / SA JSON | **Mount** from Secret Manager at deploy |
 | Shared Vercel token | **Mount** only if `MOUNT_SHARED_VERCEL_TOKEN=1` |
-| Subject Vercel tokens | **Fetched at resolve time** via Cursor WIF (not mounted on Cloud Run) |
+| Subject Vercel / Sanity tokens | **Fetched at resolve time** via Cursor WIF (not mounted on Cloud Run) |
 
 ## Secret setup
 
@@ -275,7 +278,8 @@ For the optional shared-token path instead, see [docs/milestone-l-vercel.md](doc
 | `github-app-private-key` | Mounted for runtime SA at `/run/secrets/github-app/private-key.pem` |
 | `google-analytics-sa` | Mounted for runtime SA at `/run/secrets/google-analytics/sa.json` |
 | `vercel-token` | Optional shared mount at `/run/secrets/vercel/token` (static-token-file only) |
-| `vercel-token-sub-<hash>` | Per-subject; IAM to federated Cursor principal only |
+| `vercel-token-sub-<hash>` | Per-subject Vercel; IAM to federated Cursor principal only |
+| `sanity-token-sub-<hash>` | Per-subject Sanity; IAM to federated Cursor principal only |
 
 ## Capabilities
 
@@ -284,22 +288,23 @@ For the optional shared-token path instead, see [docs/milestone-l-vercel.md](doc
 | `github.repo.read` | `pade-provider-github` (from PADE) | Short-lived `GITHUB_TOKEN` | Reference provider |
 | `google-analytics.read` | `pade-provider-google-analytics` (from PADE) | `GA_ACCESS_TOKEN`, `GA_PROPERTY_ID` | Reference provider |
 | `vercel.diagnostics` | `pade-provider-vercel` (this repo) | `VERCEL_TOKEN` Material | Opaque id; default fulfillment `subject-secret-wif` |
+| `sanity.rehearsal.write` | `pade-provider-sanity` (this repo) | `SANITY_API_TOKEN` Material | Opaque id; `SANITY_CURSOR_OIDC_SUBJECTS` allowlist; [docs/milestone-sanity-rehearsal.md](docs/milestone-sanity-rehearsal.md) |
 | `aws.s3.bucket.write` | `pade-provider-aws-s3` (this repo) | Temp AWS creds + `AWS_S3_BUCKET` / `AWS_S3_PREFIX` | GCE only; Cloud Run → AWS STS ([docs/experiment-007-phase-3.md](docs/experiment-007-phase-3.md)) |
 
 Agent-side examples: [`agent/broker.bindings.example.yaml`](agent/broker.bindings.example.yaml) (Cursor) or [`agent/broker.bindings.gce.example.yaml`](agent/broker.bindings.gce.example.yaml) (GCE); `make print-agent-bindings` / `make print-agent-bindings-gce`.
 
-`vercel.diagnostics` does **not** restrict which Vercel operations the token can perform after Material delivery. Downstream Vercel authorization remains authoritative. Prefer the narrowest Vercel scope and expiration Vercel offers; subject-bound WIF improves isolation but does **not** make a broad token read-only.
+`vercel.diagnostics` and `sanity.rehearsal.write` do **not** restrict which vendor operations the token can perform after Material delivery. Downstream credential authority remains authoritative. Prefer the narrowest vendor scope available; subject-bound WIF improves isolation but does **not** make a broad token read-only.
 
 ## Security notes
 
-- Broker must not log identity tokens; provider must not log Vercel tokens
+- Broker must not log identity tokens; providers must not log Vercel/Sanity tokens
 - Secret Manager values must never appear in rendered config under `config/.generated/`
 - Capability name ≠ operation allowlist once an opaque vendor token is delivered
 - Do not print secret values during validation — use metadata / successful downstream ops as evidence
 
 ## Validation
 
-See [`docs/validation.md`](docs/validation.md). Recommended path covers health, authn, GitHub, GA, subject-secret-wif Vercel, ordinary Vercel CLI read diagnostics, and two-subject isolation where practical.
+See [`docs/validation.md`](docs/validation.md). Recommended path covers health, authn, GitHub, GA, subject-secret-wif Vercel, Sanity rehearsal (when allowlisted), ordinary Vercel CLI read diagnostics, and two-subject isolation where practical.
 
 ## Provenance
 
@@ -326,4 +331,4 @@ Narrowing the CI deployer from `roles/run.admin` to `roles/run.developer` after
 splitting invoker-IAM setup out of routine deploy (documented TODO in
 [`docs/github-actions.md`](docs/github-actions.md)).
 
-Historical Milestone L/M operator notes remain in [`docs/milestone-l-vercel.md`](docs/milestone-l-vercel.md) and [`docs/milestone-m-wif.md`](docs/milestone-m-wif.md); they describe completed work, not future scaffolding.
+Historical Milestone L/M operator notes remain in [`docs/milestone-l-vercel.md`](docs/milestone-l-vercel.md) and [`docs/milestone-m-wif.md`](docs/milestone-m-wif.md); they describe completed work, not future scaffolding. Sanity rehearsal support: [`docs/milestone-sanity-rehearsal.md`](docs/milestone-sanity-rehearsal.md).

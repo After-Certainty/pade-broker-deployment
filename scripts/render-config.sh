@@ -103,7 +103,39 @@ if [[ -z "${GITHUB_REPOSITORIES_YAML}" ]]; then
 fi
 GITHUB_REPOSITORIES_YAML="${GITHUB_REPOSITORIES_YAML%$'\n'}"
 
-# Combined multi-issuer policies: Cursor rules (full caps) + least-priv GCE rule.
+# Combined multi-issuer policies: Cursor rules + least-priv GCE rule.
+# sanity.rehearsal.write is granted only to subjects in SANITY_CURSOR_OIDC_SUBJECTS
+# (optional; defaults to empty — no Sanity grants). Each Sanity subject must also
+# appear in the main Cursor allowlist.
+declare -A SANITY_SUBJECT_SET=()
+SANITY_SUBJECTS=()
+if [[ -n "${SANITY_CURSOR_OIDC_SUBJECTS:-}" ]]; then
+  IFS=',' read -r -a _sanity_subjects <<< "${SANITY_CURSOR_OIDC_SUBJECTS}"
+  for s in "${_sanity_subjects[@]}"; do
+    s="$(trim "${s}")"
+    [[ -z "${s}" ]] && continue
+    if is_placeholder "${s}"; then
+      echo "error: SANITY_CURSOR_OIDC_SUBJECTS contains a placeholder value: ${s}" >&2
+      exit 1
+    fi
+    SANITY_SUBJECTS+=("${s}")
+    SANITY_SUBJECT_SET["${s}"]=1
+  done
+fi
+
+# Fail closed: Sanity allowlist entries must be a subset of Cursor subjects.
+declare -A CURSOR_SUBJECT_SET=()
+for subject in "${SUBJECTS[@]}"; do
+  CURSOR_SUBJECT_SET["${subject}"]=1
+done
+for s in "${SANITY_SUBJECTS[@]}"; do
+  if [[ -z "${CURSOR_SUBJECT_SET[${s}]:-}" ]]; then
+    echo "error: SANITY_CURSOR_OIDC_SUBJECTS entry ${s} is not in CURSOR_OIDC_SUBJECT(S)" >&2
+    echo "hint: every Sanity-authorized subject must also appear in the normal Cursor allowlist" >&2
+    exit 1
+  fi
+done
+
 OIDC_POLICIES_YAML=""
 for subject in "${SUBJECTS[@]}"; do
   OIDC_POLICIES_YAML+="  - issuer: cursor"$'\n'
@@ -113,6 +145,9 @@ for subject in "${SUBJECTS[@]}"; do
   OIDC_POLICIES_YAML+="      - github.repo.read"$'\n'
   OIDC_POLICIES_YAML+="      - google-analytics.read"$'\n'
   OIDC_POLICIES_YAML+="      - vercel.diagnostics"$'\n'
+  if [[ -n "${SANITY_SUBJECT_SET[${subject}]:-}" ]]; then
+    OIDC_POLICIES_YAML+="      - sanity.rehearsal.write"$'\n'
+  fi
 done
 OIDC_POLICIES_YAML+="  - issuer: google"$'\n'
 OIDC_POLICIES_YAML+="    subject: \"${GCE_SUBJECT}\""$'\n'
@@ -122,6 +157,7 @@ OIDC_POLICIES_YAML+="      - github.repo.read"$'\n'
 OIDC_POLICIES_YAML+="      - aws.s3.bucket.write"
 # No trailing newline trim — last line has no trailing \n by construction.
 # Cursor subjects intentionally omit aws.s3.bucket.write (Experiment 007 Phase 3).
+# GCE subjects intentionally omit vercel.diagnostics and sanity.rehearsal.write.
 
 OUT_DIR="${ROOT}/config/.generated"
 mkdir -p "${OUT_DIR}"
@@ -141,6 +177,7 @@ render_template() {
   content="${content//\$\{CURSOR_WIF_POOL_ID\}/${CURSOR_WIF_POOL_ID}}"
   content="${content//\$\{CURSOR_WIF_PROVIDER_ID\}/${CURSOR_WIF_PROVIDER_ID}}"
   content="${content//\$\{VERCEL_SUBJECT_SECRET_PREFIX\}/${VERCEL_SUBJECT_SECRET_PREFIX}}"
+  content="${content//\$\{SANITY_SUBJECT_SECRET_PREFIX\}/${SANITY_SUBJECT_SECRET_PREFIX}}"
   content="${content//\$\{AWS_S3_ROLE_ARN\}/${AWS_S3_ROLE_ARN}}"
   content="${content//\$\{AWS_S3_REGION\}/${AWS_S3_REGION}}"
   content="${content//\$\{AWS_S3_BUCKET\}/${AWS_S3_BUCKET}}"
@@ -159,4 +196,5 @@ echo "==> Rendered $(policy_file_rel)"
 echo "==> Rendered $(bindings_file_rel)"
 echo "    audience=${BROKER_URL}"
 echo "    cursor_subjects=${SUBJECTS[*]}"
+echo "    sanity_subjects=${SANITY_SUBJECTS[*]:-(none)}"
 echo "    gce_subject=${GCE_SUBJECT}"

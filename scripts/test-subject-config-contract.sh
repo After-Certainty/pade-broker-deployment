@@ -167,6 +167,7 @@ assert_multi_issuer_shape() {
 
 assert_cursor_capabilities() {
   local subject="$1"
+  local expect_sanity="${2:-no}"
   local block
   block="$(rule_block_for cursor "${subject}")"
   [[ -n "${block}" ]] || {
@@ -192,6 +193,17 @@ assert_cursor_capabilities() {
   if echo "${block}" | grep -Fq "aws.s3.bucket.write"; then
     echo "FAIL: Cursor rule must not include aws.s3.bucket.write" >&2
     exit 1
+  fi
+  if [[ "${expect_sanity}" == "yes" ]]; then
+    echo "${block}" | grep -Fq "sanity.rehearsal.write" || {
+      echo "FAIL: cursor rule missing sanity.rehearsal.write for ${subject}" >&2
+      exit 1
+    }
+  else
+    if echo "${block}" | grep -Fq "sanity.rehearsal.write"; then
+      echo "FAIL: Cursor rule must not include sanity.rehearsal.write for ${subject} (not on Sanity allowlist)" >&2
+      exit 1
+    fi
   fi
 }
 
@@ -220,6 +232,10 @@ assert_gce_least_privilege() {
   fi
   if echo "${block}" | grep -Fq "vercel.diagnostics"; then
     echo "FAIL: GCE rule must not include vercel.diagnostics" >&2
+    exit 1
+  fi
+  if echo "${block}" | grep -Fq "sanity.rehearsal.write"; then
+    echo "FAIL: GCE rule must not include sanity.rehearsal.write" >&2
     exit 1
   fi
   local cap_count
@@ -259,11 +275,47 @@ assert_aws_s3_bindings() {
   fi
 }
 
+assert_sanity_bindings() {
+  local bindings="${WORK}/config/.generated/broker-bindings.yaml"
+  [[ -f "${bindings}" ]] || {
+    echo "FAIL: bindings file missing" >&2
+    exit 1
+  }
+  grep -Fq 'sanity.rehearsal.write:' "${bindings}" || {
+    echo "FAIL: bindings missing sanity.rehearsal.write" >&2
+    exit 1
+  }
+  grep -Fq '/providers/pade-provider-sanity' "${bindings}" || {
+    echo "FAIL: bindings missing sanity provider path" >&2
+    exit 1
+  }
+  grep -Fq 'fulfillment: subject-secret-wif' "${bindings}" || {
+    echo "FAIL: bindings missing subject-secret-wif" >&2
+    exit 1
+  }
+  grep -Fq 'tokenEnv: SANITY_API_TOKEN' "${bindings}" || {
+    echo "FAIL: bindings missing SANITY_API_TOKEN tokenEnv" >&2
+    exit 1
+  }
+  grep -Fq 'secretIdPrefix: "sanity-token-sub"' "${bindings}" || {
+    echo "FAIL: bindings missing sanity-token-sub prefix" >&2
+    exit 1
+  }
+  if grep -Eiq 'sk_[A-Za-z0-9]|SANITY_API_TOKEN:[[:space:]]*["'\'']?[a-zA-Z0-9]{20}' "${bindings}"; then
+    echo "FAIL: bindings appear to contain Sanity credential material" >&2
+    exit 1
+  fi
+  if grep -Eiq 'AKIA[0-9A-Z]{16}|aws_secret_access_key|BEGIN (RSA )?PRIVATE KEY' "${bindings}"; then
+    echo "FAIL: bindings appear to contain credential material" >&2
+    exit 1
+  fi
+}
+
 run_writer_and_render() {
   local extra=("$@")
   (
     cd "${WORK}"
-    unset CURSOR_OIDC_SUBJECT CURSOR_OIDC_SUBJECTS GCE_OIDC_SUBJECT
+    unset CURSOR_OIDC_SUBJECT CURSOR_OIDC_SUBJECTS GCE_OIDC_SUBJECT SANITY_CURSOR_OIDC_SUBJECTS
     export "${fixture_env[@]}"
     local kv
     for kv in "${extra[@]}"; do
@@ -291,6 +343,7 @@ assert_cursor_capabilities "user:singular"
 assert_gce_least_privilege
 assert_multi_issuer_shape
 assert_aws_s3_bindings
+assert_sanity_bindings
 
 echo "==> case B: plural-only Cursor configuration"
 rm -f "${WORK}/.env"
@@ -311,6 +364,7 @@ assert_cursor_capabilities "user:alpha"
 assert_cursor_capabilities "user:beta"
 assert_gce_least_privilege
 assert_multi_issuer_shape
+assert_sanity_bindings
 
 echo "==> case C: plural wins when both Cursor vars are set"
 rm -f "${WORK}/.env"
@@ -332,6 +386,8 @@ policy_lacks_subject "user:ignored-singular" || {
   echo "FAIL: singular subject should be ignored when plural is set" >&2
   exit 1
 }
+assert_cursor_capabilities "user:alpha"
+assert_cursor_capabilities "user:beta"
 assert_multi_issuer_shape
 
 echo "==> case D: neither Cursor subject variable supplied"
@@ -397,5 +453,60 @@ assert_eq "${gce_subject_count}" "1" "GCE subject must appear exactly once"
 assert_eq "$(count_google_rules)" "1" "exactly one google issuer rule"
 assert_gce_least_privilege
 assert_multi_issuer_shape
+
+echo "==> case G: empty Sanity allowlist grants no Sanity capability"
+rm -f "${WORK}/.env"
+rm -f "$(policy_path)"
+run_writer_and_render CURSOR_OIDC_SUBJECTS=user:alpha,user:beta
+assert_cursor_capabilities "user:alpha" no
+assert_cursor_capabilities "user:beta" no
+assert_gce_least_privilege
+assert_sanity_bindings
+if grep -Fq "sanity.rehearsal.write" "$(policy_path)"; then
+  echo "FAIL: empty Sanity allowlist must not put sanity.rehearsal.write in policy" >&2
+  exit 1
+fi
+
+echo "==> case H: Sanity allowlist grants capability only to listed Cursor subjects"
+rm -f "${WORK}/.env"
+rm -f "$(policy_path)"
+run_writer_and_render \
+  CURSOR_OIDC_SUBJECTS=user:alpha,user:beta \
+  SANITY_CURSOR_OIDC_SUBJECTS=user:alpha
+assert_cursor_capabilities "user:alpha" yes
+assert_cursor_capabilities "user:beta" no
+assert_gce_least_privilege
+assert_sanity_bindings
+grep -Fq "SANITY_CURSOR_OIDC_SUBJECTS=user:alpha" "${WORK}/.env" || {
+  echo "FAIL: production env writer must pass through SANITY_CURSOR_OIDC_SUBJECTS" >&2
+  exit 1
+}
+
+echo "==> case I: Sanity subject not in Cursor allowlist fails configuration"
+rm -f "${WORK}/.env"
+rm -f "$(policy_path)"
+set +e
+(
+  cd "${WORK}"
+  unset CURSOR_OIDC_SUBJECT CURSOR_OIDC_SUBJECTS GCE_OIDC_SUBJECT SANITY_CURSOR_OIDC_SUBJECTS
+  export "${fixture_env[@]}"
+  export CURSOR_OIDC_SUBJECTS=user:alpha,user:beta
+  export SANITY_CURSOR_OIDC_SUBJECTS=user:unknown
+  ./scripts/write-production-env.sh
+  ./scripts/render-config.sh
+) >"${TMP}/case-i.out" 2>&1
+rc=$?
+set -e
+assert_eq "${rc}" "1" "render should fail when Sanity subject is not in Cursor allowlist"
+grep -Fq 'SANITY_CURSOR_OIDC_SUBJECTS' "${TMP}/case-i.out" || {
+  echo "FAIL: case I error message missing SANITY_CURSOR_OIDC_SUBJECTS" >&2
+  cat "${TMP}/case-i.out" >&2
+  exit 1
+}
+grep -Fq 'not in CURSOR_OIDC_SUBJECT' "${TMP}/case-i.out" || {
+  echo "FAIL: case I error message missing subset check hint" >&2
+  cat "${TMP}/case-i.out" >&2
+  exit 1
+}
 
 echo "OK: subject config contract tests passed"
