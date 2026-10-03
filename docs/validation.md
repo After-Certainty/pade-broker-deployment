@@ -16,15 +16,15 @@ Covered by [pade](https://github.com/After-Certainty/pade) CI and the released
 Local overlay checks (this repo):
 
 ```bash
-make test-providers   # deployment-owned Vercel + AWS S3 provider unit tests (fakes only)
+make test-providers   # deployment-owned Vercel + AWS S3 + Sanity provider unit tests (fakes only)
 make render-config
 make build            # requires Docker; pulls digest-pinned broker
 ```
 
 - [ ] `make pull-broker` succeeds (digest-pinned image from `versions.env`)
 - [ ] `make test-providers` passes
-- [ ] `make build` produces an image containing `/providers/pade-provider-vercel`
-      and `/providers/pade-provider-aws-s3`
+- [ ] `make build` produces an image containing `/providers/pade-provider-vercel`,
+      `/providers/pade-provider-aws-s3`, and `/providers/pade-provider-sanity`
 - [ ] Rendered files under `config/.generated/` contain **no** secret values
 
 ## Stage 2 — Cloud Run health
@@ -156,38 +156,54 @@ Notes:
   does not itself grant capabilities.
 - GCE receives `github.repo.read` and `aws.s3.bucket.write`. Cursor keeps
   `github.repo.read`, `google-analytics.read`, and `vercel.diagnostics` (no AWS
-  unless explicitly authorized).
+  unless explicitly authorized). `sanity.rehearsal.write` is granted only to
+  Cursor subjects listed in `SANITY_CURSOR_OIDC_SUBJECTS` (never to GCE).
+  `vercel.radgnarrack.read` is granted only to subjects in
+  `RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS` (never to GCE); it uses a separate
+  subject-secret namespace from `vercel.diagnostics`.
 
-## Stage 5 — Material resolution (GitHub + GA + Vercel subject-secret-wif)
+## Stage 5 — Material resolution (GitHub + GA + Vercel + Sanity subject-secret-wif)
 
-Recommended path uses **subject-secret-wif** for Vercel (template default).
+Recommended path uses **subject-secret-wif** for Vercel and Sanity (template default).
 
 Operator prep (once per project / subject):
 
 ```bash
 make bootstrap-cursor-wif
 # Allowlist subjects in .env (CURSOR_OIDC_SUBJECT or CURSOR_OIDC_SUBJECTS)
+# Optional Sanity capability allowlist (subset of Cursor subjects):
+# SANITY_CURSOR_OIDC_SUBJECTS=user:…
+# Optional RadGnaRack Vercel capability allowlist (separate secret namespace):
+# RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS=user:…
 GITHUB_APP_PRIVATE_KEY="$(cat github-app.pem)" make secret-github-app
 GOOGLE_ANALYTICS_SA_JSON="$(cat ga-sa.json)" make secret-ga-sa
 # Per subject (values never printed):
 read -rsp "Vercel token: " VERCEL_TOKEN && echo && export VERCEL_TOKEN
 SUBJECT='user:…' make secret-vercel-token-subject
 unset VERCEL_TOKEN
+# Optional separate RadGnaRack Vercel authority (does not overwrite above):
+# read -rsp "RadGnaRack Vercel token: " RADGNARRACK_VERCEL_TOKEN && echo && export RADGNARRACK_VERCEL_TOKEN
+# SUBJECT='user:…' make secret-radgnarrack-vercel-token-subject
+# unset RADGNARRACK_VERCEL_TOKEN
+read -rsp "Sanity API token: " SANITY_API_TOKEN && echo && export SANITY_API_TOKEN
+SUBJECT='user:…' make secret-sanity-token-subject
+unset SANITY_API_TOKEN
 make render-config
 make build && make push && make deploy   # shared vercel-token mount omitted by default
 ```
 
-From the agent, resolve with **no** App key, SA JSON, Vercel token, or derived
-tokens on the VM.
+From the agent, resolve with **no** App key, SA JSON, Vercel token, Sanity token,
+or derived tokens on the VM.
 
-- [ ] GitHub/GA secrets exist and are mounted; subject Vercel secrets exist with
-      federated-principal IAM (runtime SA is **not** accessor on subject secrets)
+- [ ] GitHub/GA secrets exist and are mounted; subject Vercel/Sanity secrets exist
+      with federated-principal IAM (runtime SA is **not** accessor on subject secrets)
 - [ ] Agent resolve for `github.repo.read`, `google-analytics.read`, and
       `vercel.diagnostics` succeeds without local keys
+- [ ] Allowlisted agent resolve for `sanity.rehearsal.write` succeeds without local keys
 
 ### Alternate: static-token-file (Milestone L)
 
-Only if intentionally using shared authority:
+Only if intentionally using shared Vercel authority:
 
 ```bash
 read -rsp "Vercel token: " VERCEL_TOKEN && echo && export VERCEL_TOKEN
@@ -197,7 +213,7 @@ unset VERCEL_TOKEN
 MOUNT_SHARED_VERCEL_TOKEN=1 make deploy
 ```
 
-See [`milestone-l-vercel.md`](milestone-l-vercel.md).
+See [`milestone-l-vercel.md`](milestone-l-vercel.md). Sanity has no shared-token path.
 
 ## Stage 6 — downstream calls
 
@@ -208,13 +224,55 @@ Use returned authority for the smallest real call:
 - **Vercel:** `vercel.diagnostics` → ordinary Vercel CLI **read** diagnostics
   (e.g. `vercel whoami`, project inspect, deployment inspect/logs).
   Do **not** use deploy/delete or other write operations as the acceptance test.
+  Prove the intended project is visible; do not mutate domains or production env vars.
+- **Vercel (RadGnaRack authority):** `vercel.radgnarrack.read` → same class of
+  read-oriented diagnostics against the intended separate Vercel project, using
+  Material from the **distinct** subject-secret namespace. Do not overwrite
+  `vercel.diagnostics` credentials to achieve this.
+- **Sanity (rehearsal only):** `sanity.rehearsal.write` → controlled write against a
+  disposable rehearsal project/dataset (consumer-configured). See Stage 6b.
 
 ```bash
 pade exec --capability vercel.diagnostics -- vercel whoami
+# when allowlisted:
+# pade exec --capability vercel.radgnarrack.read -- vercel whoami
 ```
 
 - [ ] GitHub and GA metadata calls succeed
 - [ ] Vercel CLI read diagnostic succeeds with no manually copied credential on the agent
+
+## Stage 6b — Sanity rehearsal acceptance (future; do not run in infra-only PRs)
+
+Requires a disposable rehearsal Sanity project and a subject on
+`SANITY_CURSOR_OIDC_SUBJECTS`. See [`milestone-sanity-rehearsal.md`](milestone-sanity-rehearsal.md).
+
+Intended path:
+
+```text
+fresh Cursor Cloud Agent
+        ↓ Cursor OIDC
+deployed PADE broker
+        ↓ sanity.rehearsal.write
+subject-bound SANITY_API_TOKEN
+        ↓
+small controlled operation against disposable rehearsal Sanity
+```
+
+Smallest real acceptance later:
+
+1. Identify/read the configured rehearsal project/dataset (consumer config).
+2. Create or update a dedicated disposable test document.
+3. Read it back.
+4. Optionally delete **only** that dedicated test document if explicitly intended.
+
+No production Sanity operations. Rehearsal credentials must never be promoted.
+
+```bash
+pade exec --capability sanity.rehearsal.write -- <rehearsal Sanity CLI/API command>
+```
+
+- [ ] Resolve yields `SANITY_API_TOKEN` Material with no secret on the agent VM
+- [ ] Disposable document create/read (and optional delete) succeeds against rehearsal only
 
 ## Stage 7 — two-subject isolation (subject-secret-wif)
 
@@ -236,13 +294,15 @@ Prep:
 
 1. `CURSOR_OIDC_SUBJECTS=subject-a,subject-b` and `make render-config`
 2. `SUBJECT=… VERCEL_TOKEN=… make secret-vercel-token-subject` for each subject
-3. Bindings already use `fulfillment: subject-secret-wif`
-4. Deploy without `MOUNT_SHARED_VERCEL_TOKEN`
+3. Optionally `SANITY_CURSOR_OIDC_SUBJECTS=…` + `make secret-sanity-token-subject` per subject
+4. Bindings already use `fulfillment: subject-secret-wif`
+5. Deploy without `MOUNT_SHARED_VERCEL_TOKEN`
 
-See [`milestone-m-wif.md`](milestone-m-wif.md).
+See [`milestone-m-wif.md`](milestone-m-wif.md) and
+[`milestone-sanity-rehearsal.md`](milestone-sanity-rehearsal.md).
 
 ## Logging expectations
 
 Broker stderr (Cloud Logging) includes request decisions with subject/capability.
 It must not include OIDC JWTs or resolved secrets (PADE behavior).
-The Vercel provider must never write the token to stderr.
+Vercel and Sanity providers must never write token contents to stderr.

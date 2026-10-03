@@ -93,6 +93,8 @@ Set on Environment **`production`** (non-secret identifiers):
 | `GA_PROPERTY_ID` | `properties/…` |
 | `CURSOR_OIDC_SUBJECT` | Single Cursor OIDC subject allowlisted in broker policy (one-subject deploys) |
 | `CURSOR_OIDC_SUBJECTS` | Comma-separated Cursor OIDC subject allowlist (preferred when non-empty) |
+| `SANITY_CURSOR_OIDC_SUBJECTS` | Optional comma-separated Sanity capability allowlist (must be a subset of Cursor subjects; identifier only) |
+| `RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS` | Optional comma-separated RadGnaRack Vercel capability allowlist (must be a subset of Cursor subjects; identifier only) |
 | `GCE_OIDC_SUBJECT` | Google OIDC `sub` for the GCE-attached service account (broker authorization; non-secret) |
 | `AWS_S3_ROLE_ARN` | Phase 3 IAM role ARN from `make bootstrap-aws-s3` / `make show-aws-s3` (contains account ID; **Environment variable, not a Secret**) |
 | `AWS_S3_BUCKET` | `after-certainty-rc-pade-007-1abcdf` |

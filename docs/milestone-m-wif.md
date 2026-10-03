@@ -130,6 +130,63 @@ Exec Request shape on broker v0.1.1+ (when verify succeeds):
 }
 ```
 
+## Multiple independent authorities for one Cursor subject
+
+Identity and provider authority are separate dimensions.
+
+```text
+same authenticated Cursor subject
+          │
+          ├── vercel.diagnostics
+          │      → existing subject secret (VERCEL_SUBJECT_SECRET_PREFIX)
+          │
+          ├── vercel.radgnarrack.read
+          │      → separate subject secret (RADGNARRACK_VERCEL_SUBJECT_SECRET_PREFIX)
+          │
+          └── sanity.rehearsal.write
+                 → separate Sanity subject secret (optional allowlist)
+```
+
+| Dimension | Answers |
+|-----------|---------|
+| Identity | Who is asking? (Cursor OIDC subject) |
+| Capability | Which authority is being requested? |
+| Provider credential | What downstream operations are actually possible? |
+
+`vercel.diagnostics` and `vercel.radgnarrack.read` intentionally resolve **separate**
+subject-bound Secret Manager secrets even when requested by the **same** authenticated
+Cursor subject. Do **not** overwrite or widen the existing `vercel.diagnostics`
+credential merely to grant access to a different Vercel project.
+
+| Capability | Default secret prefix | Allowlist | Populate target |
+|------------|----------------------|-----------|-----------------|
+| `vercel.diagnostics` | `vercel-token-sub` | all Cursor subjects | `make secret-vercel-token-subject` (`VERCEL_TOKEN`) |
+| `vercel.radgnarrack.read` | `vercel-radgnarrack-token-sub` | `RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS` (default empty) | `make secret-radgnarrack-vercel-token-subject` (`RADGNARRACK_VERCEL_TOKEN`) |
+
+Both bindings reuse `/providers/pade-provider-vercel` with different `secretIdPrefix`.
+
+### Authorization boundary (current)
+
+Rendered policy uses `requireRepoURLs: false`. Broker authorization currently
+distinguishes:
+
+```text
+issuer + subject + capability
+```
+
+It does **not** distinguish repository, application, session, or consumer project.
+`vercel.radgnarrack.read` is **not** repository isolation — any authenticated Cursor
+workload with an allowlisted subject that can request that capability may receive it.
+For personal Cursor dogfood and disposable rehearsal authority this may be an accepted
+limitation. Do not enable repository-scoped hardening here without separate evidence
+and design work.
+
+Capability names (including `vercel.radgnarrack.read`) do **not** enforce read-only
+Vercel operations after Material delivery. Prefer the narrowest Vercel credential that
+still supports identify / project metadata / recent deployment inspect / read diagnostics.
+Initial acceptance must not require production deploy, domain or env mutation, or
+destructive deployment operations.
+
 ## Operator checklist
 
 1. Deploy against broker **v0.1.1+** (digest-pinned in [`versions.env`](../versions.env)).
@@ -139,10 +196,14 @@ Exec Request shape on broker v0.1.1+ (when verify succeeds):
    (or keep single `CURSOR_OIDC_SUBJECT`).
 4. For each subject: `SUBJECT=… VERCEL_TOKEN=… make secret-vercel-token-subject`
    (history-safe `read -rsp` recommended). Never print the token.
-5. `make render-config && make build && make push && make deploy` (bindings already use
+5. Optional RadGnaRack Vercel authority (separate namespace — does not touch step 4):
+   set `RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS=…`, then
+   `SUBJECT=… RADGNARRACK_VERCEL_TOKEN=… make secret-radgnarrack-vercel-token-subject`.
+6. `make render-config && make build && make push && make deploy` (bindings already use
    `subject-secret-wif`; shared Vercel mount is omitted unless `MOUNT_SHARED_VERCEL_TOKEN=1`).
-6. Acceptance: subject A and B resolve the **same** capability to **different** Vercel Material;
-   cross-subject Secret Manager access denied by IAM.
+7. Acceptance: subject A and B resolve the **same** capability to **different** Vercel Material;
+   cross-subject Secret Manager access denied by IAM; `vercel.diagnostics` and
+   `vercel.radgnarrack.read` for one subject resolve **different** downstream authorities.
 
 ### Optional: drop the shared Milestone L secret
 

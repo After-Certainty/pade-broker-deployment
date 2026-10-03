@@ -11,6 +11,7 @@ SCRIPTS := $(ROOT)/scripts
 	check-aws-s3 bootstrap-aws-s3 show-aws-s3 teardown-aws-s3 \
 	predict-url render-config print-agent-bindings print-agent-bindings-gce \
 	pull-broker build push secret-github-app secret-ga-sa secret-vercel-token secret-vercel-token-subject \
+	secret-sanity-token-subject secret-radgnarrack-vercel-token-subject \
 	deploy health authz-smoke logs teardown-docs describe-url validate-remote \
 	test-providers test-config-contract
 
@@ -33,14 +34,16 @@ help:
 	@echo "  secret-github-app            Populate GitHub App PEM in Secret Manager (stdin/env)"
 	@echo "  secret-ga-sa                 Populate GA service account JSON in Secret Manager (stdin/env)"
 	@echo "  secret-vercel-token          Populate shared Vercel token (static-token-file opt-in)"
-	@echo "  secret-vercel-token-subject  Populate subject-bound Vercel token (recommended; SUBJECT=…)"
+	@echo "  secret-vercel-token-subject  Populate subject-bound Vercel token (vercel.diagnostics; SUBJECT=…)"
+	@echo "  secret-sanity-token-subject  Populate subject-bound Sanity token (SUBJECT=…)"
+	@echo "  secret-radgnarrack-vercel-token-subject  Populate RadGnaRack Vercel token (separate namespace; SUBJECT=…)"
 	@echo "  deploy                       Deploy runtime image to Cloud Run"
 	@echo "  health                       Stage 2 GET /healthz"
 	@echo "  authz-smoke                  Stage 3 unauthenticated /v1/resolve → 401"
 	@echo "  logs                         Recent broker Cloud Logging lines"
 	@echo "  describe-url                 Print deployed status.url"
 	@echo "  teardown-docs                Print teardown commands (no deletes)"
-	@echo "  test-providers               Unit-test deployment-owned exec providers"
+	@echo "  test-providers               Unit-test deployment-owned exec providers (vercel, aws-s3, sanity)"
 	@echo "  test-config-contract         Subject allowlist contract (GHA .env writer + render-config)"
 	@echo "  validate-remote              health + authz-smoke against deployed URL"
 
@@ -120,9 +123,16 @@ secret-vercel-token:
 secret-vercel-token-subject:
 	@$(SCRIPTS)/populate-vercel-token-subject-secret.sh
 
+secret-sanity-token-subject:
+	@$(SCRIPTS)/populate-sanity-token-subject-secret.sh
+
+secret-radgnarrack-vercel-token-subject:
+	@$(SCRIPTS)/populate-radgnarrack-vercel-token-subject-secret.sh
+
 test-providers:
 	@cd "$(ROOT)/providers/vercel" && go test ./...
 	@cd "$(ROOT)/providers/aws-s3" && go test ./...
+	@cd "$(ROOT)/providers/sanity" && go test ./...
 
 test-config-contract:
 	@$(SCRIPTS)/test-subject-config-contract.sh
