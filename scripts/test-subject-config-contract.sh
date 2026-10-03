@@ -386,6 +386,27 @@ run_writer_and_render() {
   )
 }
 
+# Isolated fail-closed render (captures stdout+stderr). Avoids duplicating
+# `export CURSOR_OIDC_SUBJECTS=…` across multiple (subshells), which would
+# otherwise trip shellcheck warnings about subshell-local modifications.
+run_fail_closed_render() {
+  local outfile="$1"
+  shift
+  local extra=("$@")
+  (
+    cd "${WORK}"
+    unset CURSOR_OIDC_SUBJECT CURSOR_OIDC_SUBJECTS GCE_OIDC_SUBJECT \
+      SANITY_CURSOR_OIDC_SUBJECTS RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS
+    export "${fixture_env[@]}"
+    local kv
+    for kv in "${extra[@]}"; do
+      export "${kv?}"
+    done
+    ./scripts/write-production-env.sh
+    ./scripts/render-config.sh
+  ) >"${outfile}" 2>&1
+}
+
 echo "==> case A: singular-only Cursor configuration"
 run_writer_and_render CURSOR_OIDC_SUBJECT=user:singular
 assert_eq "$(count_cursor_rules)" "1" "singular-only cursor rule count"
@@ -547,15 +568,9 @@ echo "==> case I: Sanity subject not in Cursor allowlist fails configuration"
 rm -f "${WORK}/.env"
 rm -f "$(policy_path)"
 set +e
-(
-  cd "${WORK}"
-  unset CURSOR_OIDC_SUBJECT CURSOR_OIDC_SUBJECTS GCE_OIDC_SUBJECT SANITY_CURSOR_OIDC_SUBJECTS RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS
-  export "${fixture_env[@]}"
-  export CURSOR_OIDC_SUBJECTS=user:alpha,user:beta
-  export SANITY_CURSOR_OIDC_SUBJECTS=user:unknown
-  ./scripts/write-production-env.sh
-  ./scripts/render-config.sh
-) >"${TMP}/case-i.out" 2>&1
+run_fail_closed_render "${TMP}/case-i.out" \
+  CURSOR_OIDC_SUBJECTS=user:alpha,user:beta \
+  SANITY_CURSOR_OIDC_SUBJECTS=user:unknown
 rc=$?
 set -e
 assert_eq "${rc}" "1" "render should fail when Sanity subject is not in Cursor allowlist"
@@ -602,16 +617,9 @@ echo "==> case L: RadGnaRack subject not in Cursor allowlist fails configuration
 rm -f "${WORK}/.env"
 rm -f "$(policy_path)"
 set +e
-(
-  cd "${WORK}"
-  unset CURSOR_OIDC_SUBJECT CURSOR_OIDC_SUBJECTS GCE_OIDC_SUBJECT \
-    SANITY_CURSOR_OIDC_SUBJECTS RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS
-  export "${fixture_env[@]}"
-  export CURSOR_OIDC_SUBJECTS=user:alpha,user:beta
-  export RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS=user:unknown
-  ./scripts/write-production-env.sh
-  ./scripts/render-config.sh
-) >"${TMP}/case-l.out" 2>&1
+run_fail_closed_render "${TMP}/case-l.out" \
+  CURSOR_OIDC_SUBJECTS=user:alpha,user:beta \
+  RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS=user:unknown
 rc=$?
 set -e
 assert_eq "${rc}" "1" "render should fail when RadGnaRack subject is not in Cursor allowlist"
