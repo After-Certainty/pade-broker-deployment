@@ -124,6 +124,18 @@ sanity_subject_secret_id() {
   printf '%s-%s' "${prefix}" "${hash}"
 }
 
+# Deterministic Secret Manager id for RadGnaRack Vercel authority (separate from
+# vercel.diagnostics / vercel_subject_secret_id). Must stay in sync with
+# providers/vercel secretIDForSubject using RADGNARRACK_VERCEL_SUBJECT_SECRET_PREFIX.
+# Hash-derived name is not authorization — Secret Manager IAM is.
+radgnarrack_vercel_subject_secret_id() {
+  local subject="$1"
+  local prefix="${RADGNARRACK_VERCEL_SUBJECT_SECRET_PREFIX:-vercel-radgnarrack-token-sub}"
+  local hash
+  hash="$(printf '%s' "${subject}" | sha256sum | awk '{print $1}' | cut -c1-16)"
+  printf '%s-%s' "${prefix}" "${hash}"
+}
+
 # IAM member for a Cursor WIF federated subject (Milestone M).
 cursor_federated_principal_member() {
   local subject="$1"

@@ -158,6 +158,9 @@ Notes:
   `github.repo.read`, `google-analytics.read`, and `vercel.diagnostics` (no AWS
   unless explicitly authorized). `sanity.rehearsal.write` is granted only to
   Cursor subjects listed in `SANITY_CURSOR_OIDC_SUBJECTS` (never to GCE).
+  `vercel.radgnarrack.read` is granted only to subjects in
+  `RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS` (never to GCE); it uses a separate
+  subject-secret namespace from `vercel.diagnostics`.
 
 ## Stage 5 — Material resolution (GitHub + GA + Vercel + Sanity subject-secret-wif)
 
@@ -170,12 +173,18 @@ make bootstrap-cursor-wif
 # Allowlist subjects in .env (CURSOR_OIDC_SUBJECT or CURSOR_OIDC_SUBJECTS)
 # Optional Sanity capability allowlist (subset of Cursor subjects):
 # SANITY_CURSOR_OIDC_SUBJECTS=user:…
+# Optional RadGnaRack Vercel capability allowlist (separate secret namespace):
+# RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS=user:…
 GITHUB_APP_PRIVATE_KEY="$(cat github-app.pem)" make secret-github-app
 GOOGLE_ANALYTICS_SA_JSON="$(cat ga-sa.json)" make secret-ga-sa
 # Per subject (values never printed):
 read -rsp "Vercel token: " VERCEL_TOKEN && echo && export VERCEL_TOKEN
 SUBJECT='user:…' make secret-vercel-token-subject
 unset VERCEL_TOKEN
+# Optional separate RadGnaRack Vercel authority (does not overwrite above):
+# read -rsp "RadGnaRack Vercel token: " RADGNARRACK_VERCEL_TOKEN && echo && export RADGNARRACK_VERCEL_TOKEN
+# SUBJECT='user:…' make secret-radgnarrack-vercel-token-subject
+# unset RADGNARRACK_VERCEL_TOKEN
 read -rsp "Sanity API token: " SANITY_API_TOKEN && echo && export SANITY_API_TOKEN
 SUBJECT='user:…' make secret-sanity-token-subject
 unset SANITY_API_TOKEN
@@ -216,11 +225,17 @@ Use returned authority for the smallest real call:
   (e.g. `vercel whoami`, project inspect, deployment inspect/logs).
   Do **not** use deploy/delete or other write operations as the acceptance test.
   Prove the intended project is visible; do not mutate domains or production env vars.
+- **Vercel (RadGnaRack authority):** `vercel.radgnarrack.read` → same class of
+  read-oriented diagnostics against the intended separate Vercel project, using
+  Material from the **distinct** subject-secret namespace. Do not overwrite
+  `vercel.diagnostics` credentials to achieve this.
 - **Sanity (rehearsal only):** `sanity.rehearsal.write` → controlled write against a
   disposable rehearsal project/dataset (consumer-configured). See Stage 6b.
 
 ```bash
 pade exec --capability vercel.diagnostics -- vercel whoami
+# when allowlisted:
+# pade exec --capability vercel.radgnarrack.read -- vercel whoami
 ```
 
 - [ ] GitHub and GA metadata calls succeed

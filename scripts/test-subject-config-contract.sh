@@ -168,6 +168,7 @@ assert_multi_issuer_shape() {
 assert_cursor_capabilities() {
   local subject="$1"
   local expect_sanity="${2:-no}"
+  local expect_radgnarrack="${3:-no}"
   local block
   block="$(rule_block_for cursor "${subject}")"
   [[ -n "${block}" ]] || {
@@ -205,6 +206,17 @@ assert_cursor_capabilities() {
       exit 1
     fi
   fi
+  if [[ "${expect_radgnarrack}" == "yes" ]]; then
+    echo "${block}" | grep -Fq "vercel.radgnarrack.read" || {
+      echo "FAIL: cursor rule missing vercel.radgnarrack.read for ${subject}" >&2
+      exit 1
+    }
+  else
+    if echo "${block}" | grep -Fq "vercel.radgnarrack.read"; then
+      echo "FAIL: Cursor rule must not include vercel.radgnarrack.read for ${subject} (not on RadGnaRack Vercel allowlist)" >&2
+      exit 1
+    fi
+  fi
 }
 
 assert_gce_least_privilege() {
@@ -232,6 +244,10 @@ assert_gce_least_privilege() {
   fi
   if echo "${block}" | grep -Fq "vercel.diagnostics"; then
     echo "FAIL: GCE rule must not include vercel.diagnostics" >&2
+    exit 1
+  fi
+  if echo "${block}" | grep -Fq "vercel.radgnarrack.read"; then
+    echo "FAIL: GCE rule must not include vercel.radgnarrack.read" >&2
     exit 1
   fi
   if echo "${block}" | grep -Fq "sanity.rehearsal.write"; then
@@ -311,11 +327,55 @@ assert_sanity_bindings() {
   fi
 }
 
+# Prove vercel.diagnostics and vercel.radgnarrack.read use distinct secret namespaces.
+assert_vercel_secret_prefix_isolation() {
+  local bindings="${WORK}/config/.generated/broker-bindings.yaml"
+  [[ -f "${bindings}" ]] || {
+    echo "FAIL: bindings file missing" >&2
+    exit 1
+  }
+  grep -Fq 'vercel.diagnostics:' "${bindings}" || {
+    echo "FAIL: bindings missing vercel.diagnostics" >&2
+    exit 1
+  }
+  grep -Fq 'vercel.radgnarrack.read:' "${bindings}" || {
+    echo "FAIL: bindings missing vercel.radgnarrack.read" >&2
+    exit 1
+  }
+  # Extract secretIdPrefix under each capability block (until next top-level capability key).
+  local diag_prefix rg_prefix
+  diag_prefix="$(awk '
+    /^  vercel\.diagnostics:/ {in_block=1; next}
+    /^  [a-zA-Z0-9_.]+:/ {if (in_block) exit}
+    in_block && /secretIdPrefix:/ {
+      gsub(/[" ]/, "", $2); print $2; exit
+    }
+  ' "${bindings}")"
+  rg_prefix="$(awk '
+    /^  vercel\.radgnarrack\.read:/ {in_block=1; next}
+    /^  [a-zA-Z0-9_.]+:/ {if (in_block) exit}
+    in_block && /secretIdPrefix:/ {
+      gsub(/[" ]/, "", $2); print $2; exit
+    }
+  ' "${bindings}")"
+  assert_eq "${diag_prefix}" "vercel-token-sub" "vercel.diagnostics must use vercel-token-sub prefix"
+  assert_eq "${rg_prefix}" "vercel-radgnarrack-token-sub" "vercel.radgnarrack.read must use vercel-radgnarrack-token-sub prefix"
+  if [[ "${diag_prefix}" == "${rg_prefix}" ]]; then
+    echo "FAIL: Vercel capability secret prefixes must not collapse to the same namespace" >&2
+    exit 1
+  fi
+  # Both capabilities reuse the same provider binary.
+  local vercel_provider_count
+  vercel_provider_count="$(grep -cF '/providers/pade-provider-vercel' "${bindings}" || true)"
+  assert_eq "${vercel_provider_count}" "2" "both Vercel capabilities must point at pade-provider-vercel"
+}
+
 run_writer_and_render() {
   local extra=("$@")
   (
     cd "${WORK}"
-    unset CURSOR_OIDC_SUBJECT CURSOR_OIDC_SUBJECTS GCE_OIDC_SUBJECT SANITY_CURSOR_OIDC_SUBJECTS
+    unset CURSOR_OIDC_SUBJECT CURSOR_OIDC_SUBJECTS GCE_OIDC_SUBJECT \
+      SANITY_CURSOR_OIDC_SUBJECTS RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS
     export "${fixture_env[@]}"
     local kv
     for kv in "${extra[@]}"; do
@@ -344,6 +404,7 @@ assert_gce_least_privilege
 assert_multi_issuer_shape
 assert_aws_s3_bindings
 assert_sanity_bindings
+assert_vercel_secret_prefix_isolation
 
 echo "==> case B: plural-only Cursor configuration"
 rm -f "${WORK}/.env"
@@ -488,7 +549,7 @@ rm -f "$(policy_path)"
 set +e
 (
   cd "${WORK}"
-  unset CURSOR_OIDC_SUBJECT CURSOR_OIDC_SUBJECTS GCE_OIDC_SUBJECT SANITY_CURSOR_OIDC_SUBJECTS
+  unset CURSOR_OIDC_SUBJECT CURSOR_OIDC_SUBJECTS GCE_OIDC_SUBJECT SANITY_CURSOR_OIDC_SUBJECTS RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS
   export "${fixture_env[@]}"
   export CURSOR_OIDC_SUBJECTS=user:alpha,user:beta
   export SANITY_CURSOR_OIDC_SUBJECTS=user:unknown
@@ -508,5 +569,74 @@ grep -Fq 'not in CURSOR_OIDC_SUBJECT' "${TMP}/case-i.out" || {
   cat "${TMP}/case-i.out" >&2
   exit 1
 }
+
+echo "==> case J: empty RadGnaRack Vercel allowlist grants nobody vercel.radgnarrack.read"
+rm -f "${WORK}/.env"
+rm -f "$(policy_path)"
+run_writer_and_render CURSOR_OIDC_SUBJECTS=user:alpha,user:beta
+assert_cursor_capabilities "user:alpha" no no
+assert_cursor_capabilities "user:beta" no no
+assert_gce_least_privilege
+assert_vercel_secret_prefix_isolation
+if grep -Fq "vercel.radgnarrack.read" "$(policy_path)"; then
+  echo "FAIL: empty RadGnaRack allowlist must not put vercel.radgnarrack.read in policy" >&2
+  exit 1
+fi
+
+echo "==> case K: RadGnaRack Vercel allowlist grants capability only to listed Cursor subjects"
+rm -f "${WORK}/.env"
+rm -f "$(policy_path)"
+run_writer_and_render \
+  CURSOR_OIDC_SUBJECTS=user:alpha,user:beta \
+  RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS=user:alpha
+assert_cursor_capabilities "user:alpha" no yes
+assert_cursor_capabilities "user:beta" no no
+assert_gce_least_privilege
+assert_vercel_secret_prefix_isolation
+grep -Fq "RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS=user:alpha" "${WORK}/.env" || {
+  echo "FAIL: production env writer must pass through RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS" >&2
+  exit 1
+}
+
+echo "==> case L: RadGnaRack subject not in Cursor allowlist fails configuration"
+rm -f "${WORK}/.env"
+rm -f "$(policy_path)"
+set +e
+(
+  cd "${WORK}"
+  unset CURSOR_OIDC_SUBJECT CURSOR_OIDC_SUBJECTS GCE_OIDC_SUBJECT \
+    SANITY_CURSOR_OIDC_SUBJECTS RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS
+  export "${fixture_env[@]}"
+  export CURSOR_OIDC_SUBJECTS=user:alpha,user:beta
+  export RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS=user:unknown
+  ./scripts/write-production-env.sh
+  ./scripts/render-config.sh
+) >"${TMP}/case-l.out" 2>&1
+rc=$?
+set -e
+assert_eq "${rc}" "1" "render should fail when RadGnaRack subject is not in Cursor allowlist"
+grep -Fq 'RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS' "${TMP}/case-l.out" || {
+  echo "FAIL: case L error message missing RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS" >&2
+  cat "${TMP}/case-l.out" >&2
+  exit 1
+}
+grep -Fq 'not in CURSOR_OIDC_SUBJECT' "${TMP}/case-l.out" || {
+  echo "FAIL: case L error message missing subset check hint" >&2
+  cat "${TMP}/case-l.out" >&2
+  exit 1
+}
+
+echo "==> case M: subject authorized for both Sanity and RadGnaRack Vercel"
+rm -f "${WORK}/.env"
+rm -f "$(policy_path)"
+run_writer_and_render \
+  CURSOR_OIDC_SUBJECTS=user:alpha,user:beta \
+  SANITY_CURSOR_OIDC_SUBJECTS=user:alpha \
+  RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS=user:alpha
+assert_cursor_capabilities "user:alpha" yes yes
+assert_cursor_capabilities "user:beta" no no
+assert_gce_least_privilege
+assert_sanity_bindings
+assert_vercel_secret_prefix_isolation
 
 echo "OK: subject config contract tests passed"

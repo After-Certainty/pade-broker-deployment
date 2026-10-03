@@ -38,3 +38,16 @@ capabilities:
     broker:
       endpoint: https://YOUR-BROKER-URL
       audience: https://YOUR-BROKER-URL
+
+  # Separate RadGnaRack Vercel authority (same provider binary as
+  # vercel.diagnostics; distinct subject-secret namespace). Broker policy grants
+  # this only to subjects in RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS.
+  # Does not overwrite vercel.diagnostics Material. Capability name does not
+  # enforce read-only Vercel ops — downstream credential authority remains
+  # authoritative. Broker authz is issuer+subject+capability (requireRepoURLs:
+  # false); not repository isolation.
+  vercel.radgnarrack.read:
+    provider: broker
+    broker:
+      endpoint: https://YOUR-BROKER-URL
+      audience: https://YOUR-BROKER-URL

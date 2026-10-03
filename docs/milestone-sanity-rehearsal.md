@@ -121,8 +121,10 @@ Do **not** commit real subjects, tokens, or account/project IDs to this public r
    unset SANITY_API_TOKEN
    ```
 
-8. Provision/verify the subject’s Vercel authority for the intended project via
-   the existing Vercel flow (`make secret-vercel-token-subject`). Acceptance is
+8. Configure `RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS` for the same subject if needed,
+   then provision a **separate** RadGnaRack Vercel credential via
+   `make secret-radgnarrack-vercel-token-subject` (do **not** overwrite
+   `vercel.diagnostics` / `secret-vercel-token-subject`). Acceptance is
    read-oriented diagnostics only.
 9. `make render-config && make build && make push && make deploy`.
 10. Configure a fresh Cursor agent with released PADE + broker bindings
@@ -131,21 +133,23 @@ Do **not** commit real subjects, tokens, or account/project IDs to this public r
 11. Run acceptance in [`validation.md`](validation.md) (Sanity + Vercel) without
     copying provider secrets onto the agent.
 
-## Coexistence with Vercel (one token per subject)
+## Coexistence with Vercel (multiple authorities per subject)
 
 Existing `vercel.diagnostics` uses one Secret Manager secret per Cursor subject
 (`vercel-token-sub-…`). This Sanity work does **not** change that path.
 
-If the Cursor subject already has a useful Vercel credential for other projects,
-do **not** silently overwrite it. The operator must either:
+When the same Cursor OIDC subject needs a **different** Vercel authority (for example
+a separate project), use the deployment-owned capability `vercel.radgnarrack.read`
+with prefix `vercel-radgnarrack-token-sub` and
+`make secret-radgnarrack-vercel-token-subject`. That isolates Material by capability
+while preserving the existing `vercel.diagnostics` secret.
 
-- ensure that subject’s existing Vercel token can also see the intended project, or
-- stop and introduce a **second** deployment-owned Vercel authority/binding with a
-  distinct `secretIdPrefix` (smallest expansion) — not implemented in this pass.
+Do **not** silently overwrite or widen the existing `vercel.diagnostics` credential.
+See the multi-authority section in [`milestone-m-wif.md`](milestone-m-wif.md).
 
-`vercel.diagnostics` does **not** technically enforce read-only behavior;
-downstream Vercel credential authority remains authoritative. Prefer the
-narrowest Vercel scope available.
+`vercel.diagnostics` / `vercel.radgnarrack.read` do **not** technically enforce
+read-only behavior; downstream Vercel credential authority remains authoritative.
+Prefer the narrowest Vercel scope available.
 
 ## What this is / is not
 

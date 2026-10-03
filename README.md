@@ -184,6 +184,7 @@ cp .env.example .env
 | `CURSOR_OIDC_SUBJECT` | yes* | From a Cursor Cloud Agent: `pade identity --audience "$(make -s predict-url)"` |
 | `CURSOR_OIDC_SUBJECTS` | no | Comma-separated subjects for A/B isolation dogfood (overrides single subject) |
 | `SANITY_CURSOR_OIDC_SUBJECTS` | no | Optional Sanity capability allowlist (subset of Cursor subjects; default empty) |
+| `RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS` | no | Optional RadGnaRack Vercel capability allowlist (subset of Cursor subjects; default empty) |
 | `GCE_OIDC_SUBJECT` | yes | Google OIDC `sub` for the GCE-attached SA (broker authz; non-secret) |
 | `AWS_S3_ROLE_ARN` | yes | Phase 3 role ARN from `make bootstrap-aws-s3` (account ID; do not commit) |
 | `AWS_S3_BUCKET` | yes* | Default in `versions.env`: `after-certainty-rc-pade-007-1abcdf` |
@@ -248,6 +249,7 @@ For the optional shared-token path instead, see [docs/milestone-l-vercel.md](doc
 | `make secret-vercel-token` | Pipe shared Vercel token (static-token-file / Milestone L) |
 | `make secret-vercel-token-subject` | Pipe subject-bound Vercel token (`SUBJECT=…`) |
 | `make secret-sanity-token-subject` | Pipe subject-bound Sanity token (`SUBJECT=…`) |
+| `make secret-radgnarrack-vercel-token-subject` | Pipe RadGnaRack Vercel token (separate namespace; `SUBJECT=…`) |
 | `make deploy` | Deploy runtime image; mount secrets as files |
 | `make health` | Stage 2 liveness |
 | `make authz-smoke` | Stage 3: unauthenticated `/v1/resolve` → 401 |
@@ -278,7 +280,8 @@ For the optional shared-token path instead, see [docs/milestone-l-vercel.md](doc
 | `github-app-private-key` | Mounted for runtime SA at `/run/secrets/github-app/private-key.pem` |
 | `google-analytics-sa` | Mounted for runtime SA at `/run/secrets/google-analytics/sa.json` |
 | `vercel-token` | Optional shared mount at `/run/secrets/vercel/token` (static-token-file only) |
-| `vercel-token-sub-<hash>` | Per-subject Vercel; IAM to federated Cursor principal only |
+| `vercel-token-sub-<hash>` | Per-subject Vercel (`vercel.diagnostics`); IAM to federated Cursor principal only |
+| `vercel-radgnarrack-token-sub-<hash>` | Per-subject RadGnaRack Vercel (`vercel.radgnarrack.read`); separate namespace |
 | `sanity-token-sub-<hash>` | Per-subject Sanity; IAM to federated Cursor principal only |
 
 ## Capabilities
@@ -288,12 +291,13 @@ For the optional shared-token path instead, see [docs/milestone-l-vercel.md](doc
 | `github.repo.read` | `pade-provider-github` (from PADE) | Short-lived `GITHUB_TOKEN` | Reference provider |
 | `google-analytics.read` | `pade-provider-google-analytics` (from PADE) | `GA_ACCESS_TOKEN`, `GA_PROPERTY_ID` | Reference provider |
 | `vercel.diagnostics` | `pade-provider-vercel` (this repo) | `VERCEL_TOKEN` Material | Opaque id; default fulfillment `subject-secret-wif` |
+| `vercel.radgnarrack.read` | `pade-provider-vercel` (this repo) | `VERCEL_TOKEN` Material | Separate secret prefix; `RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS`; [docs/milestone-m-wif.md](docs/milestone-m-wif.md) |
 | `sanity.rehearsal.write` | `pade-provider-sanity` (this repo) | `SANITY_API_TOKEN` Material | Opaque id; `SANITY_CURSOR_OIDC_SUBJECTS` allowlist; [docs/milestone-sanity-rehearsal.md](docs/milestone-sanity-rehearsal.md) |
 | `aws.s3.bucket.write` | `pade-provider-aws-s3` (this repo) | Temp AWS creds + `AWS_S3_BUCKET` / `AWS_S3_PREFIX` | GCE only; Cloud Run → AWS STS ([docs/experiment-007-phase-3.md](docs/experiment-007-phase-3.md)) |
 
 Agent-side examples: [`agent/broker.bindings.example.yaml`](agent/broker.bindings.example.yaml) (Cursor) or [`agent/broker.bindings.gce.example.yaml`](agent/broker.bindings.gce.example.yaml) (GCE); `make print-agent-bindings` / `make print-agent-bindings-gce`.
 
-`vercel.diagnostics` and `sanity.rehearsal.write` do **not** restrict which vendor operations the token can perform after Material delivery. Downstream credential authority remains authoritative. Prefer the narrowest vendor scope available; subject-bound WIF improves isolation but does **not** make a broad token read-only.
+`vercel.diagnostics`, `vercel.radgnarrack.read`, and `sanity.rehearsal.write` do **not** restrict which vendor operations the token can perform after Material delivery. Downstream credential authority remains authoritative. Prefer the narrowest vendor scope available; subject-bound WIF improves isolation but does **not** make a broad token read-only. One Cursor subject may hold multiple independent authorities via distinct capabilities and secret prefixes — this is **not** repository isolation (`requireRepoURLs: false`).
 
 ## Security notes
 
