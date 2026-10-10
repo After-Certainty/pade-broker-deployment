@@ -191,3 +191,11 @@ A failed experiment is a valid result.
 PR CI remains credential-free: provider unit tests (fake metadata + fake STS),
 config contract (GCE has AWS; Cursor does not), render + overlay build. No live
 GCE metadata, AWS, or Cloud Run deploy from CI.
+
+## Shared authority boundary
+
+Distinct broker-authorized callers using this binding receive the same effective
+AWS role scope. `AWS_S3_BUCKET`/`AWS_S3_PREFIX` guide the application but do not
+restrict a malicious client; downstream IAM must enforce them. This path does not
+promise per-subject prefixes or tenant isolation. See the [pinned investigation
+and offline evidence](security-boundary-investigation.md).

@@ -45,7 +45,8 @@ func googleIdentity() map[string]interface{} {
 }
 
 type fakeEnv struct {
-	stsToken atomic.Value // string
+	stsToken      atomic.Value // string
+	metadataCalls atomic.Int32
 }
 
 func installFakes(t *testing.T) *fakeEnv {
@@ -54,6 +55,7 @@ func installFakes(t *testing.T) *fakeEnv {
 	env.stsToken.Store("")
 
 	meta := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		env.metadataCalls.Add(1)
 		if r.Header.Get("Metadata-Flavor") != "Google" {
 			http.Error(w, "missing Metadata-Flavor", http.StatusForbidden)
 			return
@@ -68,6 +70,9 @@ func installFakes(t *testing.T) *fakeEnv {
 
 	sts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
+		if r.Form.Get("DurationSeconds") != "900" || r.Form.Get("Policy") != "" || r.Form.Get("PolicyArns") != "" {
+			t.Error("unexpected STS duration or session policy; scope is owned by role IAM")
+		}
 		tok := r.Form.Get("WebIdentityToken")
 		env.stsToken.Store(tok)
 		if tok == fakeCallerToken {
@@ -159,7 +164,7 @@ func TestResolveUsesMetadataTokenNotCallerIDToken(t *testing.T) {
 	}
 	gotTok, _ := env.stsToken.Load().(string)
 	if gotTok != fakeRuntimeToken {
-		t.Fatalf("STS WebIdentityToken want runtime metadata token, got %q", gotTok)
+		t.Fatal("STS did not receive the runtime metadata token")
 	}
 	if gotTok == fakeCallerToken {
 		t.Fatal("STS must not receive caller identity.idToken")
@@ -176,7 +181,7 @@ func TestResolveUsesMetadataTokenNotCallerIDToken(t *testing.T) {
 		t.Fatalf("unexpected access key id")
 	}
 	if out["AWS_S3_BUCKET"] != "ci-fixture-007" || out["AWS_S3_PREFIX"] != "experiment-007/" {
-		t.Fatalf("unexpected bucket/prefix binding: %v", out)
+		t.Fatal("unexpected bucket/prefix binding")
 	}
 	if out["AWS_REGION"] != "us-east-1" {
 		t.Fatalf("unexpected region %q", out["AWS_REGION"])
@@ -368,4 +373,47 @@ func assertNoSecrets(t *testing.T, s string) {
 
 func TestMain(m *testing.M) {
 	os.Exit(m.Run())
+}
+
+// Both callers have already passed broker authorization. This provider does
+// not independently apply a subject allowlist or create per-subject IAM scope.
+func TestDistinctAuthorizedCallersUseSameRuntimeAuthority(t *testing.T) {
+	fake := installFakes(t)
+	cfg, err := configFromMap(testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, subject := range []string{"synthetic-subject-a", "synthetic-subject-b"} {
+		// No raw caller assertion is needed by this provider.
+		out, expiry, err := resolve(cfg, &identity{Issuer: requiredIssuer, IssuerAlias: requiredIssuerAlias, Subject: subject})
+		if err != nil {
+			t.Fatal("verified attributes without raw JWT must suffice")
+		}
+		token, _ := fake.stsToken.Load().(string)
+		if token != fakeRuntimeToken {
+			t.Fatal("caller changed the downstream federation identity")
+		}
+		if out["AWS_S3_BUCKET"] != cfg.Bucket || out["AWS_S3_PREFIX"] != cfg.Prefix || expiry == "" {
+			t.Fatal("operator scope or lifetime metadata lost")
+		}
+	}
+}
+
+func TestDeniedCallerDoesNotContactMetadataOrSTS(t *testing.T) {
+	fake := installFakes(t)
+	cfg, err := configFromMap(testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []*identity{nil, {IssuerAlias: "cursor"}, {IssuerAlias: "google", Issuer: "https://untrusted.example.invalid"}} {
+		if _, _, err := resolve(cfg, id); err == nil {
+			t.Fatal("unsupported caller accepted")
+		}
+	}
+	if token, _ := fake.stsToken.Load().(string); token != "" {
+		t.Fatal("denied caller reached STS")
+	}
+	if fake.metadataCalls.Load() != 0 {
+		t.Fatal("denied caller reached metadata")
+	}
 }

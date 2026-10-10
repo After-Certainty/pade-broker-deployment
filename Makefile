@@ -136,6 +136,7 @@ test-providers:
 
 test-config-contract:
 	@$(SCRIPTS)/test-subject-config-contract.sh
+	@$(SCRIPTS)/test-aws-s3-policy-contract.sh
 
 deploy:
 	@$(SCRIPTS)/deploy.sh
