@@ -11,7 +11,7 @@ Use metadata and successful downstream operations as evidence.
 ## Stage 1 — container
 
 Covered by [pade](https://github.com/After-Certainty/pade) CI and the released
-`ghcr.io/after-certainty/pade-broker:v0.3.0` image. Optional: `make pull-broker`.
+`ghcr.io/after-certainty/pade-broker:v0.4.0` image. Optional: `make pull-broker`.
 
 Local overlay checks (this repo):
 
@@ -64,7 +64,7 @@ make validate-remote   # stages 2 + 3
 ## Stage 4 — real Cursor identity
 
 From a Cursor Cloud Agent (identity socket present). Omitting `broker.identity`
-remains valid: PADE v0.3.0 still defaults blank identity to Cursor.
+remains valid: PADE v0.4.0 still defaults blank identity to Cursor.
 
 ```bash
 pade identity --audience "$BROKER_URL"
@@ -86,7 +86,7 @@ or HTTP) and confirm allow/deny matches the rendered policy subject
 From the existing `pade-gcp` Coder/GCE workspace (not from GitHub Actions —
 runners are not GCE workspace identity).
 
-Use PADE v0.3.0 agent bindings with Google metadata identity:
+Use PADE v0.4.0 agent bindings with Google metadata identity:
 
 ```yaml
 provider: broker
