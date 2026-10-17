@@ -191,6 +191,10 @@ assert_cursor_capabilities() {
     echo "FAIL: cursor rule missing vercel.diagnostics for ${subject}" >&2
     exit 1
   }
+  echo "${block}" | grep -Fq "vercel.analytics.read" || {
+    echo "FAIL: cursor rule missing vercel.analytics.read for ${subject}" >&2
+    exit 1
+  }
   if echo "${block}" | grep -Fq "aws.s3.bucket.write"; then
     echo "FAIL: Cursor rule must not include aws.s3.bucket.write" >&2
     exit 1
@@ -244,6 +248,10 @@ assert_gce_least_privilege() {
   fi
   if echo "${block}" | grep -Fq "vercel.diagnostics"; then
     echo "FAIL: GCE rule must not include vercel.diagnostics" >&2
+    exit 1
+  fi
+  if echo "${block}" | grep -Fq "vercel.analytics.read"; then
+    echo "FAIL: GCE rule must not include vercel.analytics.read" >&2
     exit 1
   fi
   if echo "${block}" | grep -Fq "vercel.radgnarrack.read"; then
@@ -327,7 +335,8 @@ assert_sanity_bindings() {
   fi
 }
 
-# Prove vercel.diagnostics and vercel.radgnarrack.read use distinct secret namespaces.
+# Prove three Vercel bindings: diagnostics + analytics.read share a secret
+# namespace; radgnarrack.read stays isolated. All three reuse one provider binary.
 assert_vercel_secret_prefix_isolation() {
   local bindings="${WORK}/config/.generated/broker-bindings.yaml"
   [[ -f "${bindings}" ]] || {
@@ -338,14 +347,25 @@ assert_vercel_secret_prefix_isolation() {
     echo "FAIL: bindings missing vercel.diagnostics" >&2
     exit 1
   }
+  grep -Fq 'vercel.analytics.read:' "${bindings}" || {
+    echo "FAIL: bindings missing vercel.analytics.read" >&2
+    exit 1
+  }
   grep -Fq 'vercel.radgnarrack.read:' "${bindings}" || {
     echo "FAIL: bindings missing vercel.radgnarrack.read" >&2
     exit 1
   }
   # Extract secretIdPrefix under each capability block (until next top-level capability key).
-  local diag_prefix rg_prefix
+  local diag_prefix analytics_prefix rg_prefix
   diag_prefix="$(awk '
     /^  vercel\.diagnostics:/ {in_block=1; next}
+    /^  [a-zA-Z0-9_.]+:/ {if (in_block) exit}
+    in_block && /secretIdPrefix:/ {
+      gsub(/[" ]/, "", $2); print $2; exit
+    }
+  ' "${bindings}")"
+  analytics_prefix="$(awk '
+    /^  vercel\.analytics\.read:/ {in_block=1; next}
     /^  [a-zA-Z0-9_.]+:/ {if (in_block) exit}
     in_block && /secretIdPrefix:/ {
       gsub(/[" ]/, "", $2); print $2; exit
@@ -359,15 +379,25 @@ assert_vercel_secret_prefix_isolation() {
     }
   ' "${bindings}")"
   assert_eq "${diag_prefix}" "vercel-token-sub" "vercel.diagnostics must use vercel-token-sub prefix"
+  assert_eq "${analytics_prefix}" "vercel-token-sub" "vercel.analytics.read must share vercel-token-sub prefix"
   assert_eq "${rg_prefix}" "vercel-radgnarrack-token-sub" "vercel.radgnarrack.read must use vercel-radgnarrack-token-sub prefix"
-  if [[ "${diag_prefix}" == "${rg_prefix}" ]]; then
-    echo "FAIL: Vercel capability secret prefixes must not collapse to the same namespace" >&2
+  if [[ "${diag_prefix}" != "${analytics_prefix}" ]]; then
+    echo "FAIL: vercel.diagnostics and vercel.analytics.read must share the same secret namespace" >&2
     exit 1
   fi
-  # Both capabilities reuse the same provider binary.
+  if [[ "${diag_prefix}" == "${rg_prefix}" ]]; then
+    echo "FAIL: RadGnaRack Vercel secret prefix must stay distinct from vercel.diagnostics/analytics" >&2
+    exit 1
+  fi
+  # All three Vercel capabilities reuse the same provider binary.
   local vercel_provider_count
   vercel_provider_count="$(grep -cF '/providers/pade-provider-vercel' "${bindings}" || true)"
-  assert_eq "${vercel_provider_count}" "2" "both Vercel capabilities must point at pade-provider-vercel"
+  assert_eq "${vercel_provider_count}" "3" "all three Vercel capabilities must point at pade-provider-vercel"
+  # No credential-shaped values in generated Vercel bindings.
+  if grep -Eiq 'vercel_[A-Za-z0-9]{20,}|VERCEL_TOKEN:[[:space:]]*["'\'']?[a-zA-Z0-9_]{20}' "${bindings}"; then
+    echo "FAIL: bindings appear to contain Vercel credential material" >&2
+    exit 1
+  fi
 }
 
 run_writer_and_render() {
@@ -645,6 +675,24 @@ assert_cursor_capabilities "user:alpha" yes yes
 assert_cursor_capabilities "user:beta" no no
 assert_gce_least_privilege
 assert_sanity_bindings
+assert_vercel_secret_prefix_isolation
+
+echo "==> case N: unauthorized Cursor subject does not appear in policy"
+rm -f "${WORK}/.env"
+rm -f "$(policy_path)"
+run_writer_and_render CURSOR_OIDC_SUBJECTS=user:alpha,user:beta
+policy_lacks_subject "user:unauthorized" || {
+  echo "FAIL: unauthorized subject must not appear in policy" >&2
+  exit 1
+}
+assert_cursor_capabilities "user:alpha"
+assert_cursor_capabilities "user:beta"
+# Confirm vercel.analytics.read is present for authorized subjects only (via rule blocks).
+if ! grep -Fq "vercel.analytics.read" "$(policy_path)"; then
+  echo "FAIL: authorized Cursor subjects must receive vercel.analytics.read" >&2
+  exit 1
+fi
+assert_gce_least_privilege
 assert_vercel_secret_prefix_isolation
 
 echo "OK: subject config contract tests passed"

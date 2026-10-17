@@ -1,8 +1,9 @@
 # Server-side exec bindings: broker fulfills capabilities via exec providers.
 # Durable keys live in Secret Manager and are mounted under /run/secrets/ at deploy.
 # Rendered by `make render-config` from this template + .env.
-# GitHub/GA providers mint short-lived derived tokens; vercel.diagnostics returns
-# subject-bound VERCEL_TOKEN Material via WIF (recommended; see docs/milestone-m-wif.md).
+# GitHub/GA providers mint short-lived derived tokens; vercel.diagnostics and
+# vercel.analytics.read return subject-bound VERCEL_TOKEN Material via WIF
+# (same secret prefix; recommended — see docs/milestone-m-wif.md).
 version: "0.1"
 
 capabilities:
@@ -38,6 +39,26 @@ ${GITHUB_REPOSITORIES_YAML}
   #   tokenFile: "/run/secrets/vercel/token"
   #   tokenEnv: VERCEL_TOKEN
   vercel.diagnostics:
+    provider: exec
+    exec:
+      command: ["/providers/pade-provider-vercel"]
+      config:
+        fulfillment: subject-secret-wif
+        tokenEnv: VERCEL_TOKEN
+        projectNumber: "${PROJECT_NUMBER}"
+        poolId: "${CURSOR_WIF_POOL_ID}"
+        providerId: "${CURSOR_WIF_PROVIDER_ID}"
+        secretIdPrefix: "${VERCEL_SUBJECT_SECRET_PREFIX}"
+
+  # Deployment-owned Vercel Web Analytics read capability (opaque, non-normative).
+  # Same provider binary, WIF pool, and ${VERCEL_SUBJECT_SECRET_PREFIX} as
+  # vercel.diagnostics — intentional: After Certainty reader-analytics and
+  # diagnostics share the existing subject-bound Vercel authority.
+  # PADE authorizes the named capability and supplies Material; the consumer is
+  # expected to perform read-only Web Analytics queries. The provider does not
+  # restrict HTTP methods or endpoints — downstream credential authority remains
+  # authoritative. See docs/milestone-m-wif.md.
+  vercel.analytics.read:
     provider: exec
     exec:
       command: ["/providers/pade-provider-vercel"]

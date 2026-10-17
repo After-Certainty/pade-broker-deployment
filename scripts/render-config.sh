@@ -179,6 +179,7 @@ for subject in "${SUBJECTS[@]}"; do
   OIDC_POLICIES_YAML+="      - github.repo.read"$'\n'
   OIDC_POLICIES_YAML+="      - google-analytics.read"$'\n'
   OIDC_POLICIES_YAML+="      - vercel.diagnostics"$'\n'
+  OIDC_POLICIES_YAML+="      - vercel.analytics.read"$'\n'
   if [[ -n "${SANITY_SUBJECT_SET[${subject}]:-}" ]]; then
     OIDC_POLICIES_YAML+="      - sanity.rehearsal.write"$'\n'
   fi
@@ -195,6 +196,7 @@ OIDC_POLICIES_YAML+="      - aws.s3.bucket.write"
 # No trailing newline trim — last line has no trailing \n by construction.
 # Cursor subjects intentionally omit aws.s3.bucket.write (Experiment 007 Phase 3).
 # GCE subjects intentionally omit vercel.* and sanity.rehearsal.write.
+# vercel.analytics.read shares the vercel.diagnostics subject allowlist (not GCE).
 
 OUT_DIR="${ROOT}/config/.generated"
 mkdir -p "${OUT_DIR}"
