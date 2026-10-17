@@ -155,12 +155,14 @@ Notes:
 - Broker authorization is **issuer alias + subject**. Adding a trusted issuer
   does not itself grant capabilities.
 - GCE receives `github.repo.read` and `aws.s3.bucket.write`. Cursor keeps
-  `github.repo.read`, `google-analytics.read`, and `vercel.diagnostics` (no AWS
-  unless explicitly authorized). `sanity.rehearsal.write` is granted only to
-  Cursor subjects listed in `SANITY_CURSOR_OIDC_SUBJECTS` (never to GCE).
+  `github.repo.read`, `google-analytics.read`, `vercel.diagnostics`, and
+  `vercel.analytics.read` (no AWS unless explicitly authorized).
+  `sanity.rehearsal.write` is granted only to Cursor subjects listed in
+  `SANITY_CURSOR_OIDC_SUBJECTS` (never to GCE).
   `vercel.radgnarrack.read` is granted only to subjects in
   `RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS` (never to GCE); it uses a separate
-  subject-secret namespace from `vercel.diagnostics`.
+  subject-secret namespace from `vercel.diagnostics` / `vercel.analytics.read`
+  (those two share the After Certainty Vercel subject secret by design).
 
 ## Stage 5 — Material resolution (GitHub + GA + Vercel + Sanity subject-secret-wif)
 
@@ -197,8 +199,8 @@ or derived tokens on the VM.
 
 - [ ] GitHub/GA secrets exist and are mounted; subject Vercel/Sanity secrets exist
       with federated-principal IAM (runtime SA is **not** accessor on subject secrets)
-- [ ] Agent resolve for `github.repo.read`, `google-analytics.read`, and
-      `vercel.diagnostics` succeeds without local keys
+- [ ] Agent resolve for `github.repo.read`, `google-analytics.read`,
+      `vercel.diagnostics`, and `vercel.analytics.read` succeeds without local keys
 - [ ] Allowlisted agent resolve for `sanity.rehearsal.write` succeeds without local keys
 
 ### Alternate: static-token-file (Milestone L)
@@ -225,21 +227,32 @@ Use returned authority for the smallest real call:
   (e.g. `vercel whoami`, project inspect, deployment inspect/logs).
   Do **not** use deploy/delete or other write operations as the acceptance test.
   Prove the intended project is visible; do not mutate domains or production env vars.
+- **Vercel (Web Analytics):** `vercel.analytics.read` → same subject-bound
+  `VERCEL_TOKEN` Material as `vercel.diagnostics`. Intended consumer path is a
+  read-only Web Analytics API query (e.g. After Certainty
+  `apps/site/scripts/vercel-web-analytics-query.sh` via `pade exec`). Capability
+  name does **not** enforce read-only HTTP; downstream credential authority remains
+  authoritative. Do not print tokens or use a production write as the smoke test.
 - **Vercel (RadGnaRack authority):** `vercel.radgnarrack.read` → same class of
   read-oriented diagnostics against the intended separate Vercel project, using
   Material from the **distinct** subject-secret namespace. Do not overwrite
-  `vercel.diagnostics` credentials to achieve this.
+  `vercel.diagnostics` / `vercel.analytics.read` credentials to achieve this.
 - **Sanity (rehearsal only):** `sanity.rehearsal.write` → controlled write against a
   disposable rehearsal project/dataset (consumer-configured). See Stage 6b.
 
 ```bash
 pade exec --capability vercel.diagnostics -- vercel whoami
+pade exec --capability vercel.analytics.read --quiet -- \
+  apps/site/scripts/vercel-web-analytics-query.sh visits/count \
+  since=2026-01-01 until=2026-01-02 "filter=environment eq 'production'"
 # when allowlisted:
 # pade exec --capability vercel.radgnarrack.read -- vercel whoami
 ```
 
 - [ ] GitHub and GA metadata calls succeed
 - [ ] Vercel CLI read diagnostic succeeds with no manually copied credential on the agent
+- [ ] `vercel.analytics.read` resolves Material and a small read-only Web Analytics
+      query succeeds for the intended project; unauthorized identities remain denied
 
 ## Stage 6b — Sanity rehearsal acceptance (future; do not run in infra-only PRs)
 
@@ -273,6 +286,40 @@ pade exec --capability sanity.rehearsal.write -- <rehearsal Sanity CLI/API comma
 
 - [ ] Resolve yields `SANITY_API_TOKEN` Material with no secret on the agent VM
 - [ ] Disposable document create/read (and optional delete) succeeds against rehearsal only
+
+## Stage 6c — post-deploy: `vercel.analytics.read` (After Certainty consumer)
+
+Local CI (`make test-config-contract`, `make test-providers`, `shellcheck`) proves
+render/policy/bindings contracts only. Live Material resolution requires a deployed
+broker and an authorized Cursor Cloud Agent.
+
+From an authorized After Certainty Cloud Agent (after this capability is deployed):
+
+```bash
+# 1. Capability is recognized by the consumer session
+pade capabilities -f pade.yaml --bindings .pade/agent-bindings.yaml
+
+# 2–3. Broker authorizes + resolves VERCEL_TOKEN into the child only
+pade exec -f pade.yaml --bindings .pade/agent-bindings.yaml \
+  --capability vercel.analytics.read --quiet -- \
+  apps/site/scripts/vercel-web-analytics-query.sh visits/count \
+  since=2026-01-01 until=2026-01-02 "filter=environment eq 'production'"
+
+# 4. Existing diagnostics path still works
+pade exec -f pade.yaml --bindings .pade/agent-bindings.yaml \
+  --capability vercel.diagnostics --quiet -- vercel whoami
+
+# 5. Full pack (prefers analytics.read; falls back to diagnostics if needed)
+make reader-analytics-test
+```
+
+- [ ] `pade capabilities` lists `vercel.analytics.read`
+- [ ] Authorized subject resolves Material; small read-only Web Analytics query returns HTTP 200 JSON
+- [ ] `vercel.diagnostics` still succeeds for the same subject
+- [ ] Unauthorized / non-allowlisted identity remains denied
+- [ ] No tokens, JWTs, or Material printed in logs or chat
+
+Never use a production write request as the smoke test.
 
 ## Stage 7 — two-subject isolation (subject-secret-wif)
 

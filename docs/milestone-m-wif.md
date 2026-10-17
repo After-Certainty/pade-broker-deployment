@@ -140,6 +140,9 @@ same authenticated Cursor subject
           ├── vercel.diagnostics
           │      → existing subject secret (VERCEL_SUBJECT_SECRET_PREFIX)
           │
+          ├── vercel.analytics.read
+          │      → same subject secret as vercel.diagnostics (intentional share)
+          │
           ├── vercel.radgnarrack.read
           │      → separate subject secret (RADGNARRACK_VERCEL_SUBJECT_SECRET_PREFIX)
           │
@@ -153,17 +156,24 @@ same authenticated Cursor subject
 | Capability | Which authority is being requested? |
 | Provider credential | What downstream operations are actually possible? |
 
-`vercel.diagnostics` and `vercel.radgnarrack.read` intentionally resolve **separate**
-subject-bound Secret Manager secrets even when requested by the **same** authenticated
-Cursor subject. Do **not** overwrite or widen the existing `vercel.diagnostics`
+`vercel.diagnostics` and `vercel.analytics.read` intentionally share the **same**
+subject-bound Secret Manager secret (After Certainty Vercel authority). Consumers
+such as After Certainty’s reader-analytics pack prefer `vercel.analytics.read` and
+may fall back to `vercel.diagnostics` until this capability is granted.
+
+`vercel.radgnarrack.read` intentionally resolves a **separate** subject-bound secret
+even when requested by the **same** authenticated Cursor subject. Do **not**
+overwrite or widen the existing `vercel.diagnostics` / `vercel.analytics.read`
 credential merely to grant access to a different Vercel project.
 
 | Capability | Default secret prefix | Allowlist | Populate target |
 |------------|----------------------|-----------|-----------------|
 | `vercel.diagnostics` | `vercel-token-sub` | all Cursor subjects | `make secret-vercel-token-subject` (`VERCEL_TOKEN`) |
+| `vercel.analytics.read` | `vercel-token-sub` (shared) | all Cursor subjects (same as diagnostics) | same secret as `vercel.diagnostics` |
 | `vercel.radgnarrack.read` | `vercel-radgnarrack-token-sub` | `RADGNARRACK_VERCEL_CURSOR_OIDC_SUBJECTS` (default empty) | `make secret-radgnarrack-vercel-token-subject` (`RADGNARRACK_VERCEL_TOKEN`) |
 
-Both bindings reuse `/providers/pade-provider-vercel` with different `secretIdPrefix`.
+All three bindings reuse `/providers/pade-provider-vercel`. Diagnostics and analytics
+share `secretIdPrefix`; RadGnaRack uses a distinct prefix.
 
 ### Authorization boundary (current)
 
@@ -181,11 +191,19 @@ For personal Cursor dogfood and disposable rehearsal authority this may be an ac
 limitation. Do not enable repository-scoped hardening here without separate evidence
 and design work.
 
-Capability names (including `vercel.radgnarrack.read`) do **not** enforce read-only
-Vercel operations after Material delivery. Prefer the narrowest Vercel credential that
-still supports identify / project metadata / recent deployment inspect / read diagnostics.
-Initial acceptance must not require production deploy, domain or env mutation, or
-destructive deployment operations.
+Capability names (including `vercel.analytics.read` and `vercel.radgnarrack.read`)
+do **not** enforce read-only Vercel operations after Material delivery. PADE
+authorizes access to the named capability; the provider supplies subject-bound
+credential Material into the child process; the consumer is expected to perform
+read-only operations. Actual downstream permissions are determined by the Vercel
+credential. This deployment does **not** introduce broker-mediated endpoint-level
+authorization (HTTP method / analytics-only path filtering). Prefer the narrowest
+Vercel credential that still supports identify / project metadata / recent
+deployment inspect / read diagnostics / Web Analytics query. Truly enforced
+analytics-only authority would require a separate scoped token, credential policy,
+or mediated provider design — a possible future improvement, not part of the
+current binding. Initial acceptance must not require production deploy, domain or
+env mutation, or destructive deployment operations.
 
 ## Operator checklist
 
@@ -203,7 +221,8 @@ destructive deployment operations.
    `subject-secret-wif`; shared Vercel mount is omitted unless `MOUNT_SHARED_VERCEL_TOKEN=1`).
 7. Acceptance: subject A and B resolve the **same** capability to **different** Vercel Material;
    cross-subject Secret Manager access denied by IAM; `vercel.diagnostics` and
-   `vercel.radgnarrack.read` for one subject resolve **different** downstream authorities.
+   `vercel.analytics.read` for one subject resolve the **same** downstream authority;
+   `vercel.radgnarrack.read` resolves a **different** authority.
 
 ### Optional: drop the shared Milestone L secret
 

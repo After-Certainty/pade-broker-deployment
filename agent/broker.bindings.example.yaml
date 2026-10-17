@@ -29,6 +29,16 @@ capabilities:
       endpoint: https://YOUR-BROKER-URL
       audience: https://YOUR-BROKER-URL
 
+  # Vercel Web Analytics read (same subject-bound VERCEL_TOKEN Material as
+  # vercel.diagnostics). Intended for read-only analytics API queries; capability
+  # name does not enforce read-only ops — downstream credential authority remains
+  # authoritative. See docs/milestone-m-wif.md.
+  vercel.analytics.read:
+    provider: broker
+    broker:
+      endpoint: https://YOUR-BROKER-URL
+      audience: https://YOUR-BROKER-URL
+
   # Sanity CLI/API receives SANITY_API_TOKEN Material from the broker
   # (subject-secret-wif). Broker policy grants this only to subjects listed in
   # SANITY_CURSOR_OIDC_SUBJECTS. Project/dataset remain consumer configuration.
